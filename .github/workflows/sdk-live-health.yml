@@ -15,6 +15,45 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  javascript-live:
+    name: JavaScript live core routes
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdks/js
+    env:
+      NROUTER_API_KEY: ${{ secrets.NROUTER_SDK_HEALTH_API_KEY }}
+      NROUTER_BASE_URL: https://api.nrouter.ai/v1
+      NROUTER_LIVE: '1'
+      NROUTER_LIVE_CHAT_MODEL: ${{ vars.NROUTER_LIVE_CHAT_MODEL }}
+      NROUTER_LIVE_RESPONSES_MODEL: ${{ vars.NROUTER_LIVE_RESPONSES_MODEL }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: sdks/js/package-lock.json
+
+      - name: Verify live-test configuration
+        run: |
+          test -n "$NROUTER_API_KEY"
+          test -n "$NROUTER_LIVE_CHAT_MODEL"
+          test -n "$NROUTER_LIVE_RESPONSES_MODEL"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build SDK
+        run: npm run build
+
+      - name: Run low-cost JavaScript probes
+        run: >-
+          node --test
+          --test-name-pattern='live Claude|live OpenAI chat|live Responses'
+          test/live.test.ts
+
   python-live:
     name: Python live core routes
     runs-on: ubuntu-latest
