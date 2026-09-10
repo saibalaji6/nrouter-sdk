@@ -1,0 +1,119 @@
+name: Live media smoke
+
+# This workflow makes real, paid requests. It is deliberately manual-only.
+on:
+  workflow_dispatch:
+    inputs:
+      run_image:
+        description: Generate one low-quality test image
+        required: true
+        default: true
+        type: boolean
+      run_speech:
+        description: Generate one short text-to-speech clip
+        required: true
+        default: true
+        type: boolean
+      run_video:
+        description: Generate one minimum-duration (4-second) test video; this costs more
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-media-smoke
+  # Never cancel a run after it submits a paid video job.
+  cancel-in-progress: false
+
+jobs:
+  media:
+    name: Paid JavaScript SDK media smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: sdks/js
+    env:
+      NROUTER_API_KEY: ${{ secrets.NROUTER_SDK_HEALTH_API_KEY }}
+      NROUTER_BASE_URL: https://api.nrouter.ai/v1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: sdks/js/package-lock.json
+
+      - name: Require a test selection and API key
+        run: |
+          test -n "$NROUTER_API_KEY"
+          test '${{ inputs.run_image }}' = true || test '${{ inputs.run_speech }}' = true || test '${{ inputs.run_video }}' = true
+
+      - run: npm ci
+      - run: npm run build
+      - run: mkdir -p media-output
+
+      - name: Generate one small image
+        if: ${{ inputs.run_image }}
+        run: |
+          node <<'NODE'
+          (async () => {
+            const fs = require('node:fs');
+            const { nRouter } = require('./dist');
+            const client = new nRouter({ apiKey: process.env.NROUTER_API_KEY, baseURL: process.env.NROUTER_BASE_URL, maxRetries: 0 });
+            const result = await client.nr.media.image({ model: 'gpt-image-1-mini', prompt: 'A simple blue circle on a white background.', n: 1, size: '1024x1024', quality: 'low' });
+            const image = result.body?.data?.[0]?.b64_json;
+            if (!image) throw new Error('Image response did not contain b64_json output');
+            fs.writeFileSync('media-output/image.png', Buffer.from(image, 'base64'));
+            fs.writeFileSync('media-output/image.json', JSON.stringify({ requestId: result.meta.requestId, costStatus: result.meta.costStatus }, null, 2));
+            console.log(`Image succeeded: ${result.meta.requestId}`);
+          })().catch((error) => { console.error(error); process.exit(1); });
+          NODE
+
+      - name: Generate one short speech clip
+        if: ${{ inputs.run_speech }}
+        run: |
+          node <<'NODE'
+          (async () => {
+            const fs = require('node:fs');
+            const { nRouter } = require('./dist');
+            const client = new nRouter({ apiKey: process.env.NROUTER_API_KEY, baseURL: process.env.NROUTER_BASE_URL, maxRetries: 0 });
+            const result = await client.nr.media.speech({ model: 'tts-1', input: 'nRouter media smoke test successful.', voice: 'alloy', response_format: 'mp3' });
+            if (!result.bytes?.length) throw new Error('Speech response was empty');
+            fs.writeFileSync('media-output/speech.mp3', result.bytes);
+            fs.writeFileSync('media-output/speech.json', JSON.stringify({ requestId: result.meta.requestId, costStatus: result.meta.costStatus }, null, 2));
+            console.log(`Speech succeeded: ${result.meta.requestId}`);
+          })().catch((error) => { console.error(error); process.exit(1); });
+          NODE
+
+      - name: Generate and collect one 4-second video
+        if: ${{ inputs.run_video }}
+        run: |
+          node <<'NODE'
+          (async () => {
+            const fs = require('node:fs');
+            const { nRouter } = require('./dist');
+            const client = new nRouter({ apiKey: process.env.NROUTER_API_KEY, baseURL: process.env.NROUTER_BASE_URL, maxRetries: 0 });
+            const created = await client.nr.media.video({ model: 'sora-2', prompt: 'A blue circle gently moving across a white background.', seconds: 4, size: '1280x720' });
+            const jobId = String(created.body?.id || '');
+            if (!jobId) throw new Error('Video creation did not return a job ID');
+            await client.nr.media.waitForVideo(jobId, { pollIntervalMs: 5000, timeoutMs: 600000 });
+            const file = await client.nr.media.videoContent(jobId);
+            if (!file.bytes?.length) throw new Error('Video download was empty');
+            fs.writeFileSync('media-output/video.mp4', file.bytes);
+            fs.writeFileSync('media-output/video.json', JSON.stringify({ jobId, requestId: created.meta.requestId, costStatus: created.meta.costStatus }, null, 2));
+            console.log(`Video succeeded: ${jobId}`);
+          })().catch((error) => { console.error(error); process.exit(1); });
+          NODE
+
+      - name: Upload generated media
+        if: ${{ always() && (inputs.run_image || inputs.run_speech || inputs.run_video) }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: live-media-output
+          path: sdks/js/media-output
+          if-no-files-found: warn
+          retention-days: 7
