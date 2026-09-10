@@ -15,6 +15,41 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  python-live:
+    name: Python live core routes
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdks/python
+    env:
+      NROUTER_API_KEY: ${{ secrets.NROUTER_SDK_HEALTH_API_KEY }}
+      NROUTER_BASE_URL: https://api.nrouter.ai/v1
+      NROUTER_LIVE: '1'
+      NROUTER_LIVE_CHAT_MODEL: ${{ vars.NROUTER_LIVE_CHAT_MODEL }}
+      NROUTER_LIVE_RESPONSES_MODEL: ${{ vars.NROUTER_LIVE_RESPONSES_MODEL }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.13'
+
+      - name: Verify live-test configuration
+        run: |
+          test -n "$NROUTER_API_KEY"
+          test -n "$NROUTER_LIVE_CHAT_MODEL"
+          test -n "$NROUTER_LIVE_RESPONSES_MODEL"
+
+      - name: Install SDK test dependencies
+        run: python -m pip install -e ".[dev]"
+
+      - name: Run low-cost Python probes
+        run: >-
+          python -m pytest -q
+          tests/test_live.py::test_live_claude_messages_returns_billing_metadata
+          tests/test_live.py::test_live_openai_chat_completions_wire_answers
+          tests/test_live.py::test_live_responses_wire_answers
+
   dart-live:
     name: Dart live Messages stream
     runs-on: ubuntu-latest
