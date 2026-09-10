@@ -288,5 +288,54 @@ jobs:
         working-directory: sdks/r
         run: Rscript -e "testthat::test_local(filter = 'live')"
 
+  health-summary:
+    name: SDK health summary
+    if: ${{ always() }}
+    needs:
+      - javascript-live
+      - python-live
+      - dart-live
+      - java-live
+      - kotlin-live
+      - rust-live
+      - go-live
+      - android-live
+      - swift-live
+      - r-live
+    runs-on: ubuntu-latest
+    env:
+      JAVASCRIPT: ${{ needs.javascript-live.result }}
+      PYTHON: ${{ needs.python-live.result }}
+      DART: ${{ needs.dart-live.result }}
+      JAVA: ${{ needs.java-live.result }}
+      KOTLIN: ${{ needs.kotlin-live.result }}
+      RUST: ${{ needs.rust-live.result }}
+      GO: ${{ needs.go-live.result }}
+      ANDROID: ${{ needs.android-live.result }}
+      SWIFT: ${{ needs.swift-live.result }}
+      R: ${{ needs.r-live.result }}
+    steps:
+      - name: Write health report
+        run: |
+          {
+            echo '# SDK live health report'
+            echo
+            echo "Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo
+            echo '| SDK | Result |'
+            echo '| --- | --- |'
+            for sdk in JAVASCRIPT PYTHON DART JAVA KOTLIN RUST GO ANDROID SWIFT R; do
+              echo "| ${sdk,,} | ${!sdk} |"
+            done
+          } | tee sdk-health-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload health report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sdk-live-health-summary
+          path: sdk-health-summary.md
+          retention-days: 14
+
 # Image, text-to-speech, and video calls are intentionally manual-only:
 # they cost more than these text/embedding health probes.

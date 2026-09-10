@@ -7,6 +7,10 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  schedule:
+    # Full SDK suites are free of nRouter API charges; run them after the
+    # daily live gateway check to catch dependency or toolchain drift.
+    - cron: '47 10 * * *'
 
 permissions:
   contents: read
