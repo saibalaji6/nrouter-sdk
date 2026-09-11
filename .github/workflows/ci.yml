@@ -51,7 +51,9 @@ jobs:
         run: python3 conformance/check_conformance.py
 
       - name: SDK contract tests
-        run: python3 -m pytest tests/test_sdk_contract.py tests/test_release_versions.py tests/test_tag_publish_gated.py
+        # This personal fork intentionally has no publish/release workflows.
+        # Its CI monitors SDK health rather than package publication.
+        run: python3 -m pytest tests/test_sdk_contract.py
 
       - name: Install pinned security scanners
         run: |
