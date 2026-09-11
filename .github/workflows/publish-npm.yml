@@ -1,0 +1,323 @@
+# Publish @nrouter_ai/sdk to npm, on merge to main.
+#
+# ONE workflow for this language: it tests and it publishes. There is no
+# separate CI file to keep in step.
+#
+# WHY MERGE-TRIGGERED IS SAFE HERE. npm versions are immutable, so "publish on
+# every merge" only works if a merge that changes no version is a NO-OP rather
+# than a failure. That is the `already published?` step: it compares
+# package.json against the registry and skips the publish when they match. The
+# release procedure is therefore just:
+#
+#     bump "version" in sdks/js/package.json  ->  merge  ->  it ships
+#
+# and a merge without a bump does nothing, quietly and green.
+#
+# NO REPO SECRET. Publishing is npm trusted publishing (OIDC), against a
+# trusted publisher registered on the package for THIS repository and THIS
+# workflow FILENAME — so renaming this file breaks publishing until the
+# registration is updated to match. That is the security property, not a snag.
+#
+# What it replaced was a bypass-2FA granular token. npm withdraws direct publish
+# from those in January 2027 (github.blog changelog, 2026-07-31). OIDC removes
+# the credential rather than rotating it: nothing to expire, leak, or re-issue
+# every 90 days.
+name: npm
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'sdks/js/**'
+      - 'spec/**'
+      - 'conformance/**'
+      - 'tests/**'
+      - '.github/workflows/publish-npm.yml'
+  # ⚠️ DELIBERATE EXCEPTION to the workspace's local-first CI policy
+  # (`gh-workflow` skill: "Never add per-commit or per-PR hosted CI ... without
+  # explicit operator direction"). Recorded here so the next reader does not
+  # delete it as drift, and so the reasoning can be argued with:
+  #
+  #   - This repository is PUBLIC and takes outside pull requests. A
+  #     contributor cannot run the workspace's local gates, and neither can a
+  #     maintainer before reading the PR. "Focused local checks" has no one to
+  #     run it.
+  #   - Without this trigger a PR ran ZERO checks: every gate lived in the
+  #     merge-triggered job, so the first execution of a contributor's code was
+  #     the run that PUBLISHED it to npm — immutably.
+  #   - The policy's stated cost, hosted minutes, is not incurred: GitHub
+  #     Actions is free for public repositories on standard runners.
+  #
+  # It stays advisory. This is NOT wired as a required status check, and it
+  # emits no release evidence — tag-only `release-validation` remains the sole
+  # authoritative full suite.
+  pull_request:
+    paths:
+      - 'sdks/js/**'
+      - 'spec/**'
+      - 'conformance/**'
+      - 'tests/**'
+      - '.github/workflows/publish-npm.yml'
+  workflow_dispatch:
+
+# Default for the whole file. `id-token: write` is granted to the publish job
+# ALONE — see the note above that job.
+permissions:
+  contents: read
+
+concurrency:
+  # Publishes share one global lane so two can never race an upload. Pull
+  # requests key on their own ref, so one contributor's PR does not queue
+  # behind another's.
+  group: npm-${{ github.event_name == 'pull_request' && github.ref || 'publish' }}
+  cancel-in-progress: false   # never cancel a run that may be mid-upload
+
+jobs:
+  # Runs the untrusted half: `npm ci` executes install scripts and `npm test`
+  # executes the dependency tree. This job is deliberately given NO
+  # `id-token` permission, so nothing it runs can mint an npm OIDC token.
+  verify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      publish: ${{ steps.check.outputs.publish }}
+    defaults:
+      run:
+        working-directory: sdks/js
+    steps:
+      # SHA-PINNED, not @vN. A mutable major tag can be retargeted, and these
+      # jobs later hold a registry credential and npm's OIDC permission — so a
+      # retargeted action would run unreviewed code with publish rights.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # >= 22.18: the test launcher hands `node --test` the .ts files and
+          # relies on native type stripping. On Node 20 the run dies on the
+          # first `as`, before a single test executes.
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: sdks/js/package-lock.json
+
+      - run: npm ci
+
+      # The tests and the cross-SDK contract gate. Nothing publishes if either
+      # is red — which is the whole reason they live in this file.
+      - run: npm test
+
+      - name: Cross-SDK conformance
+        working-directory: .
+        run: |
+          python3 conformance/check_conformance.py --self-test
+          python3 conformance/check_conformance.py
+
+      - name: Already published?
+        id: check
+        run: |
+          set -euo pipefail
+          PKG=@nrouter_ai/sdk
+
+          # The NAME must be the one we expect. `npm publish` uses whatever
+          # package.json says, while the availability check below asks about a
+          # fixed name — so a mistyped or changed name would have this step
+          # inspect one package and then permanently upload a different one,
+          # which a namespace-wide token is happy to do.
+          name="$(node -p "require('./package.json').name")"
+          if [ "$name" != "$PKG" ]; then
+            echo "::error::package.json declares '$name'; this workflow only publishes $PKG"; exit 1
+          fi
+
+          v="$(node -p "require('./package.json').version")"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+          # STABLE SemVer only. An untagged publish moves npm's default
+          # `latest` pointer, so a prerelease would make `npm install` hand
+          # everyone an rc. Backports go out by hand with --tag.
+          case "$v" in
+            *[!0-9.]*|*..*|.*|*.) echo "::error::'$v' is not a stable MAJOR.MINOR.PATCH version"; exit 1 ;;
+          esac
+
+          if npm view "$PKG@$v" version >/dev/null 2>&1; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::$PKG@$v is already on npm — nothing to do. Bump the version to release."
+            exit 0
+          fi
+
+          # AND NEWER THAN LATEST. "Unused" is not "newer": publishing an
+          # unused 1.1.0 while 1.2.0 is live moves `latest` BACKWARDS and
+          # silently downgrades every fresh install. Nothing errors; consumers
+          # just lose features.
+          #
+          # `|| true` is deliberately NOT used on this lookup — a transient
+          # registry failure reading as "nothing published yet" is exactly how
+          # a downgrade would slip through.
+          if latest="$(npm view "$PKG" version 2>/tmp/e)"; then
+            newest="$(printf '%s\n%s\n' "$latest" "$v" | sort -V | tail -1)"
+            if [ "$newest" != "$v" ]; then
+              echo "::error::$v is older than the published latest ($latest); publishing it would downgrade every fresh install"
+              exit 1
+            fi
+          elif grep -qiE '404|E404|not found' /tmp/e; then
+            echo "::notice::$PKG has no published version yet; $v will be the first"
+          else
+            echo "::error::could not read the published version from npm, so a downgrade cannot be ruled out:"
+            cat /tmp/e >&2; exit 1
+          fi
+          echo "publish=true" >> "$GITHUB_OUTPUT"
+
+      # The build output is the ONLY thing that crosses into the publish job.
+      # package.json, README and LICENSE come from that job's own clean
+      # checkout, so a compromised dependency cannot rewrite the manifest,
+      # rename the package, or widen `files` on the way through.
+      - name: Hand the built package to the publish job
+        if: steps.check.outputs.publish == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: js-dist
+          path: sdks/js/dist
+          if-no-files-found: error
+          retention-days: 1
+
+  # THE ONLY JOB THAT MAY MINT AN OIDC TOKEN, and it runs no repository
+  # dependency to do it: no `npm ci`, no `npm test`, no build. It restores the
+  # verified `dist/` and packs it.
+  #
+  # This split is the point of the whole file. `id-token: write` at workflow
+  # scope would have handed npm-audience token minting to every process
+  # `npm ci` and `npm test` start — a poisoned dependency or cache could then
+  # exchange one for publish rights and ship an arbitrary version, with no
+  # NODE_AUTH_TOKEN anywhere to steal. Scoping the permission to a job that
+  # executes only npm itself is what makes removing the token an improvement
+  # rather than a lateral move.
+  publish:
+    needs: verify
+    # MAIN ONLY, and `workflow_dispatch` is exactly why. Dispatch accepts an
+    # arbitrary --ref, so a collaborator could run this workflow from a branch
+    # and publish from it with the repository secret, without that branch ever
+    # reaching main or passing review. Excluding pull requests alone did not
+    # close that; the ref check does.
+    if: >-
+      github.event_name != 'pull_request'
+      && github.ref == 'refs/heads/main'
+      && needs.verify.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # npm trusted publishing + provenance
+    defaults:
+      run:
+        working-directory: sdks/js
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The token is only as scoped as the registry it is SENT to. npm gives a
+      # project `.npmrc` precedence over the one setup-node writes, and
+      # `publishConfig.registry` overrides both for a publish — so a merged
+      # change under sdks/js could redirect this upload, and the long-lived
+      # credential, to a host the attacker controls. `--ignore-scripts` does
+      # not help: no script has to run for that.
+      #
+      # RUNS FIRST, immediately after checkout, and the ORDER is the control.
+      # Under OIDC the minting capability is JOB-scoped, not step-scoped: the
+      # `ACTIONS_ID_TOKEN_REQUEST_*` variables are ambient to every step here.
+      # So anything this job fetches or executes can mint a publish token — and
+      # the very first fetch, the npm floor install below, reads project npm
+      # config from `sdks/js`. Running this guard after that would let a merged
+      # `sdks/js/.npmrc` redirect that install and execute attacker-served code
+      # inside the credential boundary before the guard ever looked. The token
+      # era hid this: the credential was step-scoped `env:` on Publish alone.
+      - name: Refuse a repository-controlled npm config
+        run: |
+          set -euo pipefail
+          for f in ../../.npmrc ../.npmrc ./.npmrc; do
+            if [ -e "$f" ]; then
+              echo "::error::$f exists; a repository-controlled npm config can redirect the publish registry and with it the token"
+              exit 1
+            fi
+          done
+
+          # ALLOWLIST publishConfig, do not merely check `registry`. npm treats
+          # EVERY publishConfig key as runtime config, so checking the registry
+          # host alone leaves the transport open: `https-proxy` plus
+          # `strict-ssl: false` routes this publish through an attacker's TLS
+          # proxy while the hostname still reads registry.npmjs.org, and npm
+          # sends the publish credential to it because the registry "matches".
+          # `access: public` is the only key this package needs.
+          node -e '
+            const pc = require("./package.json").publishConfig ?? {};
+            const allowed = { access: "public" };
+            const bad = Object.entries(pc).filter(([k, v]) => allowed[k] !== v);
+            if (bad.length) {
+              console.error("::error::package.json publishConfig may contain only {access:\"public\"}; refusing: " +
+                bad.map(([k, v]) => k + "=" + JSON.stringify(v)).join(", "));
+              process.exit(1);
+            }
+          '
+
+          eff="$(npm config get registry)"
+          if [ "$eff" != "https://registry.npmjs.org/" ]; then
+            echo "::error::effective npm registry is '$eff', not registry.npmjs.org"
+            exit 1
+          fi
+          echo "registry confirmed: $eff"
+
+      # No `cache:` here. A restored npm cache is attacker-controlled content
+      # entering the one job that holds the OIDC permission; this job installs
+      # no dependencies, so it has nothing to cache.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      # OIDC trusted publishing landed in npm 11.5.0 (npm/cli#8336). The
+      # runner's bundled npm 10 does not attempt it at all — it would fall
+      # through to token auth and, with no token present, simply fail. This is
+      # a floor, not an upgrade.
+      - name: npm 11.19.1, the floor for OIDC trusted publishing
+        run: |
+          # EXACT pin and an EXPLICIT registry, not `npm@^11.5.1`. This install
+          # runs inside the one job holding `id-token: write`, and the OIDC
+          # request variables are ambient to every step in it — so whatever
+          # this fetches can mint a publish token. A floating range means the
+          # privileged job executes a version nobody reviewed, and an implicit
+          # registry means the config decides where it comes from.
+          npm install -g npm@11.19.1 --registry=https://registry.npmjs.org
+          npm --version
+
+      - name: Restore the verified build output
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: js-dist
+          path: sdks/js/dist
+
+      # NO CREDENTIAL. `id-token: write` on this job lets the runner mint a
+      # short-lived token that npm exchanges for publish rights after matching
+      # this repository and this workflow filename against the trusted
+      # publisher registered on the package.
+      #
+      # --ignore-scripts stays and is a CONTROL, not a build preference:
+      # `npm publish` runs prepack/prepublishOnly, and a lifecycle script here
+      # would execute inside the one job that holds the OIDC permission.
+      # Nothing in this package needs one.
+      - name: Publish
+        run: npm publish --access public --provenance --ignore-scripts
+
+      - name: Verify the registry serves it
+        env:
+          V: ${{ needs.verify.outputs.version }}
+        run: |
+          # `npm publish` exiting 0 is npm ACCEPTING the upload; this is the
+          # registry SERVING it. Different events, seconds apart.
+          # 5 minutes, same reason as the PyPI pipeline: a registry can lag a
+          # fresh upload by more than a minute, and a short window turns a good
+          # release into a red run.
+          for _ in $(seq 1 30); do
+            [ "$(npm view '@nrouter_ai/sdk' version)" = "$V" ] && exit 0
+            sleep 10
+          done
+          # The upload already succeeded; this is a confirmation timeout, not a
+          # failed publish. Republishing cannot work — the version is taken.
+          echo "::error::could not confirm npm is serving $V within 5 minutes. The upload SUCCEEDED; check https://www.npmjs.com/package/@nrouter_ai/sdk rather than republishing."
+          exit 1
