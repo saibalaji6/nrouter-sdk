@@ -1,0 +1,17 @@
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "gpt-5.4-mini",
+      "object": "model"
+    },
+    {
+      "id": "claude-sonnet-4-5",
+      "object": "model"
+    },
+    {
+      "id": "tts-1",
+      "object": "model"
+    }
+  ]
+}

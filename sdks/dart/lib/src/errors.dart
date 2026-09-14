@@ -39,6 +39,8 @@ sealed class NRouterError implements Exception {
       case 'invalid_api_key':
         return NRouterAuthenticationError(body);
       case 'insufficient_credits':
+      case 'plan_allowance_exhausted':
+      case 'plan_required':
         return NRouterCreditError(body);
       case 'model_not_found':
         return NRouterNotFoundError(body);
@@ -73,6 +75,11 @@ sealed class NRouterError implements Exception {
                 : NRouterOtherError(body);
           case 429:
             return NRouterRateLimitError(body);
+          case 502:
+          case 504:
+            return body.message.toLowerCase().contains('too large')
+                ? NRouterOtherError(body)
+                : NRouterServiceError(body);
           case 503:
             return NRouterServiceError(body);
           default:

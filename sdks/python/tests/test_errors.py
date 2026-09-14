@@ -82,7 +82,10 @@ def status_error(
         (404, "video not found: vid_123", nRouterError),
         (429, "rate limit exceeded", nRouterRateLimitError),
         (500, "a backend service is temporarily unavailable", nRouterServiceError),
+        (502, "upstream provider error", nRouterServiceError),
+        (502, "the upstream response was too large to process", nRouterError),
         (503, "authentication is temporarily unavailable", nRouterServiceError),
+        (504, "gateway timeout", nRouterServiceError),
     ],
 )
 def test_each_status_maps_to_its_typed_error(status, message, expected):
@@ -464,3 +467,30 @@ def test_format_error_redaction_and_structure():
     assert "sk-***" in generic_formatted
 
 
+
+def test_a_402_with_plan_allowance_exhausted_maps_to_credit_error_with_that_code():
+    err = status_error(402, "plan allowance exhausted", {"x-nr-limit-source": "plan_allowance_exhausted"})
+    with pytest.raises(nRouterCreditError) as caught:
+        _maybe_raise_nrouter_error(err)
+    assert caught.value.code == "plan_allowance_exhausted"
+
+def test_a_402_with_plan_required_maps_to_credit_error_with_that_code():
+    err = status_error(402, "plan required", {"x-nr-limit-source": "plan_required"})
+    with pytest.raises(nRouterCreditError) as caught:
+        _maybe_raise_nrouter_error(err)
+    assert caught.value.code == "plan_required"
+
+def test_an_old_402_keeps_insufficient_credits():
+    err = status_error(402, "insufficient credits", {})
+    with pytest.raises(nRouterCreditError) as caught:
+        _maybe_raise_nrouter_error(err)
+    assert caught.value.code == "insufficient_credits"
+
+def test_funding_source_and_allowance_reset_are_parsed_from_headers():
+    from nroutersdk import nRouterResponseMeta
+    meta = nRouterResponseMeta.from_headers({
+        "x-nr-funding-source": "allowance",
+        "x-nr-allowance-reset": "86400",
+    })
+    assert meta.funding_source == "allowance"
+    assert meta.allowance_reset == 86400

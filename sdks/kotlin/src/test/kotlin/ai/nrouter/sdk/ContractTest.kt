@@ -1003,16 +1003,47 @@ class ContractTest {
             validateAudioFormat("unsupported_fmt")
         }
 
+        val client = clientFor(server)
+
+        // Empty ID is rejected
+        assertFailsWith<NRouterError.Configuration> {
+            client.waitForVideo("")
+        }
+        assertFailsWith<NRouterError.Configuration> {
+            client.waitForVideo("   ")
+        }
+
+        // Sub-1s poll interval is rejected
+        assertFailsWith<NRouterError.Configuration> {
+            client.waitForVideo("vid_123", pollIntervalMillis = 999L)
+        }
+
+        // Timeout shorter than poll interval is rejected
+        assertFailsWith<NRouterError.Configuration> {
+            client.waitForVideo("vid_123", pollIntervalMillis = 2000L, timeoutMillis = 1000L)
+        }
+
+        // Successful poll
         server.enqueue(
             MockResponse()
                 .setResponseCode(200)
                 .setHeader("content-type", "application/json")
                 .setBody("""{"id":"vid_123","status":"completed","output":"https://example.com/out.mp4"}""")
         )
-
-        val client = clientFor(server)
-        val resp = client.waitForVideo("vid_123", pollIntervalMillis = 10, timeoutMillis = 1000)
+        val resp = client.waitForVideo("vid_123", pollIntervalMillis = 1000L, timeoutMillis = 2000L)
         assertEquals("completed", resp.body.getString("status"))
+
+        // Terminal failure status throws Service error
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("content-type", "application/json")
+                .setBody("""{"id":"vid_fail","status":"failed"}""")
+        )
+        val err = assertFailsWith<NRouterError.Service> {
+            client.waitForVideo("vid_fail", pollIntervalMillis = 1000L, timeoutMillis = 2000L)
+        }
+        assertEquals("video_failed", err.body?.code)
     }
 
     @Test
@@ -1137,6 +1168,31 @@ class ContractTest {
             NRouter.withTraceContext(emptyMap(), "bad\r\ntrace", "sess")
         }
     }
+    @Test
+    fun `parses fundingSource and allowanceReset`() {
+        val meta = NRouterResponseMeta.fromLookup { name ->
+            when (name) {
+                "x-nr-funding-source" -> "allowance"
+                "x-nr-allowance-reset" -> "86400"
+                else -> null
+            }
+        }
+        assertEquals("allowance", meta.fundingSource)
+        assertEquals(86400L, meta.allowanceReset)
+    }
+
+    @Test
+    fun `plan limits map to Credit`() {
+        val meta1 = NRouterResponseMeta.fromLookup { if (it == "x-nr-limit-source") "plan_allowance_exhausted" else null }
+        val err1 = NRouter.errorBody(402, org.json.JSONObject(), meta1)
+        val nrouterErr1 = NRouterError.fromCode(err1)
+        assertTrue(nrouterErr1 is NRouterError.Credit)
+        assertEquals("plan_allowance_exhausted", err1.code)
+
+        val meta2 = NRouterResponseMeta.fromLookup { if (it == "x-nr-limit-source") "plan_required" else null }
+        val err2 = NRouter.errorBody(402, org.json.JSONObject(), meta2)
+        val nrouterErr2 = NRouterError.fromCode(err2)
+        assertTrue(nrouterErr2 is NRouterError.Credit)
+        assertEquals("plan_required", err2.code)
+    }
 }
-
-

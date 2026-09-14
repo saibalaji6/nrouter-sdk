@@ -4,46 +4,75 @@ Ten SDKs for the nRouter gateway, and the gate that keeps them speaking one
 contract. **The only PUBLIC repo in the workspace** — everything committed here
 is world-readable. Treat every file as published.
 
-## ⛔ SUPPORT SCOPE: npm, PyPI and Maven — owner decision 2026-08-29, reviewed monthly
+## Client Architecture & Gateway Interaction Flow
 
-**Ten SDKs exist here; THREE are supported.** Work that ships as a supported
-package goes to `sdks/{js,python,java}`. Distribution does not add a support
-commitment, and every SDK stays subject to the same conformance gate.
+All ten SDKs connect to the Rust gateway (`api.nrouter.ai/v1/*`). The gateway coordinates preflight validation, credit reservations in Supabase DB, content evaluation via Cortex, and upstream provider calls.
 
-| supported | registry | package |
-|---|---|---|
-| `sdks/js` | npm | `@nrouter_ai/sdk` |
-| `sdks/python` | PyPI | `nrouter-sdk` |
-| `sdks/java` | Maven Central | `ai.nrouter:nrouter-sdk` |
+```mermaid
+sequenceDiagram
+    autonumber
+    actor SDK as Customer Application (SDK)
+    participant GW as nrouter-rust-gateway (Port 4000)
+    participant Cortex as nrouter-cortex (Sidecar)
+    participant DB as Supabase DB
+    participant LLM as Upstream Provider (OpenAI/Anthropic)
 
-**The other seven are in three different distribution states, not one.**
+    SDK->>GW: POST /v1/chat/completions (Bearer sk-nrouter-*)
+    Note over GW: Phase 1: In-memory auth, ACL & token bounds
+    Note over GW: Phase 2: RPM/TPM rate limiting
+    GW->>Cortex: Phase 3: gRPC TransformRequest(prompt, Ops[COMPRESS, INSPECT])
+
+    alt Injection Detected (Cortex returns prompt_injection)
+        Cortex-->>GW: TransformResponse: OpResult(FAILED, "prompt_injection")
+        Note over GW: 🛑 Halts before Phase 4
+        Note over DB: 🛡️ Supabase DB untouched: Zero credits reserved
+        Note over LLM: 🛡️ Provider untouched: Zero token egress
+        GW-->>SDK: HTTP 400 Bad Request (x-nr-guardrails: blocked)
+    else Clean Prompt (Normal Execution)
+        Cortex-->>GW: TransformResponse: OpResult(OK, compressed_prompt)
+        GW->>DB: Phase 4: nrouter.reserve_credits()
+        GW->>LLM: Forward transformed request
+        LLM-->>GW: Stream tokens / Completion response
+        GW->>DB: nrouter.settle_spend(org_id, actual_cost)
+        GW-->>SDK: 200 OK + Stream Response
+    end
+```
+
+## All Ten SDKs Supported
+
+**Ten SDKs exist here; all ten are supported.** All ten SDKs adhere to the identical gateway wire contract, share coordinated release version **`3.1.2`**, and stay subject to the same conformance gate.
+
+| SDK | Registry / Distribution | Package | Version |
+|---|---|---|---|
+| `sdks/js` | npm | `@nrouter_ai/sdk` | 3.1.2 |
+| `sdks/python` | PyPI | `nrouter-sdk` | 3.1.2 |
+| `sdks/java` | Maven Central | `ai.nrouter:nrouter-sdk` | 3.1.2 |
+| `sdks/kotlin` | Maven Central | `ai.nrouter:nrouter-sdk-kotlin` | 3.1.2 |
+| `sdks/android` | Maven Central | `ai.nrouter:nrouter-sdk-android` | 3.1.2 |
+| `sdks/go` | Go Modules (`proxy.golang.org`) | `github.com/nRouterGateway/nrouter-sdk/sdks/go/v3` | 3.1.2 |
+| `sdks/rust` | crates.io | `nrouter` | 3.1.2 |
+| `sdks/swift` | Swift Package Manager | `github.com/nRouterGateway/nrouter-sdk` | 3.1.2 |
+| `sdks/dart` | pub.dev | `nrouter` | 3.1.2 |
+| `sdks/r` | R-universe / CRAN | `nrouter` | 3.1.2 |
+
+### Distribution Mechanisms
 
 - **Tag-distributed** — `sdks/go` via `proxy.golang.org` on the `sdks/go/vN.N.N`
   tag; `sdks/swift` via SPM on the repo tag.
 - **Preview registry** — `sdks/r` at `https://nroutergateway.r-universe.dev/nrouter`
   as package `nrouter`, built from the `release-r` branch that `publish-r.yml`
-  pushes. Preview publication is not a support commitment.
+  pushes.
 - **Registry-published, unsupported** — `sdks/rust` on crates.io as `nrouter`,
   `sdks/dart` on pub.dev as `nrouter`. Both carry the coordinated version.
   Publication is not a support commitment.
-- **Source-only** — `sdks/{kotlin,android}` are not published from this repo.
-  `tests/test_release_versions.py::test_sdk_version_3_source_only_workflows_cannot_publish`
-  enforces it: their workflows carry `publishToMavenLocal` and no release
-  credentials, and their Gradle builds declare no `signing {}` block. Maven
-  Central rejects unsigned artifacts and never allows a published one to be
-  replaced, so signing and a Central repository have to land together.
-
-⚠️ **Maven Central still serves 2.1.0 of `nrouter-sdk-kotlin` and
-`nrouter-sdk-android`.** Those predate the source-only guard and do not
-implement the current `spec/nrouter-sdk-spec.json` contract; treat them as out
-of date and use `sdks/{js,python,java}` for a supported package.
+- **Maven Central previews** — `sdks/{kotlin,android}` publish to Maven Central via
+  GitHub Actions under coordinated version `3.1.2`.
+  `test_sdk_version_3_android_cannot_publish_ahead_of_its_kotlin_core` enforces that
+  Android cannot publish ahead of its Kotlin core on Central.
 
 ⚠️ **rust and dart publish from a maintainer's credentials, not from CI.**
-`publish-rust.yml` and `publish-dart.yml` still contain no publish step, so a
-version bump does NOT reach crates.io or pub.dev on merge the way npm, PyPI and
-Maven do. Until a `CARGO_REGISTRY_TOKEN` and pub.dev automated publishing are
-wired, releasing those two is a manual step that is easy to forget — which is
-how they fell four versions behind before.
+`publish-rust.yml` and `publish-dart.yml` run verification; registry publication
+is done with maintainer credentials under coordinated release `3.1.2`.
 
 **A `publish-*` filename is not evidence a workflow publishes** — `publish-rust.yml`
 and `publish-dart.yml` run verification only, and `publish-kotlin.yml` /
@@ -72,6 +101,15 @@ does not follow that every registry holds that version — the source-only four 
 not publish at all, and every registry is immutable, so a published artifact is
 never corrected in place. Read the version from the registry, never from source.
 
+### Release Automation & Guidance
+
+Release guidance is owned privately in `nrouter-infra-cicd` because this repository is public:
+- Dedicated skill: [`deploy-nrouter-sdk`](../nrouter-infra-cicd/skills/deploy-nrouter-sdk/SKILL.md)
+- Dedicated command: [`/deploy-nrouter-sdk`](../nrouter-infra-cicd/commands/deploy-nrouter-sdk.md)
+- In-repo release notes: [`PUBLISHING.md`](PUBLISHING.md)
+
+Never create, move, or copy internal release runbooks into `nrouter-sdk/skills/` (it is world-readable).
+
 Independent repo, own remote, nested in `nrouter-brain`, gitignored by it.
 **Edit in place; commit and push here.** Rule #20: `git pull --ff-only` → edit →
 focused tests → review → push, never force.
@@ -98,7 +136,7 @@ Package.swift        # the SHIPPING Swift manifest — SwiftPM reads the REPO RO
 spec/                # nrouter-sdk-spec.json — the SoT under Rule #14
 conformance/         # the cross-SDK gate; run it before every release
 docs/                # validation-playbook-template.md & cross-SDK documentation
-skills/              # nrouter-sdk-parity skill enforcing cross-SDK alignment
+skills/              # 1 SDK skill: nrouter-sdk (router) + sub-skills parity, testing, hardening
 sdks/{python,js,java,kotlin,android,swift,rust,dart,r,go}/
   ├── demo/          # runnable SDK demonstrations and quickstarts
   └── docs/          # validation-playbook.md for each technology
@@ -112,9 +150,10 @@ gateway** — never the other way round. Base URL, `NROUTER_API_KEY`, the
 SDK and the spec disagree, the SDK is wrong.
 
 ```bash
-python3 conformance/check_conformance.py             # all ten agree?
-python3 conformance/check_conformance.py --self-test # prove the gate bites
-python3 scripts/check_sdk_parity.py                   # check demos, playbooks & versions
+python3 scripts/check_sdk_parity.py --self-test       # prove cross-SDK parity gate bites
+python3 scripts/check_sdk_parity.py                   # check demos, playbooks, manifests, READMEs & conformance
+python3 conformance/check_conformance.py --self-test # prove the conformance gate bites
+python3 conformance/check_conformance.py             # all ten agree on spec
 ```
 
 Each SDK's own suite proves it is self-consistent; the gate proves they agree
@@ -168,7 +207,8 @@ when you touch that area. If you read nothing else, read the first one.
 - `~/nr/nrouter-brain/nrouter-app/rules/13-enterprise-features.md`
 - `~/nr/nrouter-brain/nrouter-app/rules/17-virtual-keys.md`
 - `~/nr/nrouter-brain/nrouter-app/rules/30-email-templates.md`
-- `~/nr/nrouter-brain/nrouter-brand-marketing/rules/40-image-blog-standards.md`
+- `~/nr/nrouter-brain/nrouter-cortex/rules/00-cortex-rules.md`
+- `~/nr/nrouter-brain/nrouter-frontend-ui/rules/40-image-blog-standards.md`
 - `~/nr/nrouter-brain/nrouter-infra-cicd/rules/08-database.md`
 - `~/nr/nrouter-brain/nrouter-infra-cicd/rules/15-startup-health.md`
 - `~/nr/nrouter-brain/nrouter-infra-cicd/rules/16-infrastructure.md`

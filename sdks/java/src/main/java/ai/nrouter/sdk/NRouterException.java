@@ -43,19 +43,25 @@ public final class NRouterException extends RuntimeException {
     }
 
     static NRouterException gateway(String message, String code, String param, String type, int status, NRouterResponseMeta meta, Long retryAfter) {
+        if (code == null && status == 402 && meta != null) {
+            String ls = meta.limitSource();
+            if ("plan_allowance_exhausted".equals(ls) || "plan_required".equals(ls)) {
+                code = ls;
+            }
+        }
         return new NRouterException(classify(code, message, status), message, code, param, type, status, meta, retryAfter);
     }
 
     static NRouterException transport(String message) {
-        return new NRouterException(Kind.TRANSPORT, message, null, null, null, 0, null, null);
+        return new NRouterException(Kind.TRANSPORT, redactKeys(message), null, null, null, 0, null, null);
     }
 
     static NRouterException transport(String message, int status, NRouterResponseMeta meta) {
-        return new NRouterException(Kind.TRANSPORT, message, null, null, null, status, meta, null);
+        return new NRouterException(Kind.TRANSPORT, redactKeys(message), null, null, null, status, meta, null);
     }
 
     static NRouterException configuration(String message) {
-        return new NRouterException(Kind.CONFIGURATION, message, "configuration_error", null, null, 400, null, null);
+        return new NRouterException(Kind.CONFIGURATION, redactKeys(message), "configuration_error", null, null, 400, null, null);
     }
 
     private static Kind classify(String code, String message, int status) {
@@ -64,7 +70,9 @@ public final class NRouterException extends RuntimeException {
                 case "invalid_request": return Kind.REQUEST;
                 case "guardrail_blocked": return Kind.GUARDRAIL_BLOCKED;
                 case "invalid_api_key": return Kind.AUTHENTICATION;
-                case "insufficient_credits": return Kind.CREDIT;
+                case "insufficient_credits":
+                case "plan_allowance_exhausted":
+                case "plan_required": return Kind.CREDIT;
                 case "model_not_found": return Kind.NOT_FOUND;
                 case "rate_limit_exceeded":
                 case "tpm_limit_exceeded": return Kind.RATE_LIMIT;
@@ -83,8 +91,9 @@ public final class NRouterException extends RuntimeException {
             case 425: return Kind.SERVICE;
             case 429: return Kind.RATE_LIMIT;
             case 502:
-            case 503:
-            case 504: return Kind.SERVICE;
+            case 504:
+                return lower.contains("too large") ? Kind.OTHER : Kind.SERVICE;
+            case 503: return Kind.SERVICE;
             default: return Kind.OTHER;
         }
     }
