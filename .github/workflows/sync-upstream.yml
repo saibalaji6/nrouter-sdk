@@ -1,0 +1,58 @@
+name: Sync upstream SDK
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 14 * * *"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: sync-upstream-sdk
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Sync upstream changes into a review branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          branch="automation/sync-upstream"
+          git config user.name "nrouter-sdk sync bot"
+          git config user.email "noreply@github.com"
+          git remote add upstream https://github.com/nRouterGateway/nrouter-sdk.git || \
+            git remote set-url upstream https://github.com/nRouterGateway/nrouter-sdk.git
+          git fetch --no-tags upstream main
+
+          if git merge-base --is-ancestor upstream/main HEAD; then
+            echo "Already up to date with upstream." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          git switch -C "$branch"
+          git merge --no-edit upstream/main
+
+          # This personal fork is for SDK monitoring, never package publishing.
+          rm -f .github/workflows/publish-*.yml .github/workflows/release-tags.yml
+          git add .github/workflows
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: keep fork monitoring-only"
+          fi
+
+          git push --force-with-lease origin "HEAD:$branch"
+          if ! gh pr list --head "$branch" --base main --state open --json number --jq '.[0].number' | grep -q .; then
+            gh pr create \
+              --base main \
+              --head "$branch" \
+              --title "chore: sync latest upstream SDK changes" \
+              --body "Automated upstream sync. CI must pass before merging."
+          fi
