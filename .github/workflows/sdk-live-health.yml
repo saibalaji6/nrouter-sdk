@@ -4,8 +4,6 @@ name: SDK live health
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '17 10 * * *'
 
 permissions:
   contents: read
