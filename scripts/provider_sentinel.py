@@ -25,31 +25,23 @@ ROUTES = ("/v1/messages", "/v1/chat/completions", "/v1/responses")
 
 
 def provider_label(model: dict[str, Any]) -> str:
-    """Use catalogue metadata when available, otherwise avoid guessing."""
-    return str(model.get("provider") or model.get("owned_by") or model.get("maker") or "catalogue")
+    """Prefer the actual maker over nRouter's generic catalogue owner."""
+    return str(model.get("maker") or model.get("owned_by") or model.get("provider") or "catalogue")
 
 
-def approved_models(route: str) -> tuple[str, ...]:
-    """Read the operator-approved, low-cost candidates for one route."""
-    names = {
-        "/v1/messages": "NROUTER_PROVIDER_SENTINEL_MESSAGES_MODELS",
-        "/v1/chat/completions": "NROUTER_PROVIDER_SENTINEL_CHAT_MODELS",
-        "/v1/responses": "NROUTER_PROVIDER_SENTINEL_RESPONSES_MODELS",
-    }
-    return tuple(model.strip() for model in os.getenv(names[route], "").split(",") if model.strip())
-
-
-def choose(
-    catalogue: list[dict[str, Any]], route: str, run_date: str, allowed: tuple[str, ...]
-) -> dict[str, Any] | None:
+def choose(catalogue: list[dict[str, Any]], route: str, rotation_key: str) -> dict[str, Any] | None:
+    """Rotate through advertised providers, then models, for this endpoint."""
     candidates = sorted(
-        (item for item in catalogue if item.get("id") in allowed and route in item.get("nrouter_endpoints", [])),
-        key=lambda item: str(item.get("id", "")),
+        (item for item in catalogue if route in item.get("nrouter_endpoints", [])),
+        key=lambda item: (provider_label(item), str(item.get("id", ""))),
     )
     if not candidates:
         return None
-    index = int(hashlib.sha256(f"{run_date}:{route}".encode()).hexdigest(), 16) % len(candidates)
-    return candidates[index]
+    providers = sorted({provider_label(item) for item in candidates})
+    provider_index = int(hashlib.sha256(f"{rotation_key}:{route}:provider".encode()).hexdigest(), 16) % len(providers)
+    provider_models = [item for item in candidates if provider_label(item) == providers[provider_index]]
+    model_index = int(hashlib.sha256(f"{rotation_key}:{route}:model".encode()).hexdigest(), 16) % len(provider_models)
+    return provider_models[model_index]
 
 
 def payload(route: str, model: str) -> dict[str, Any]:
@@ -91,7 +83,7 @@ def run(base_url: str, api_key: str, rotation_key: str) -> list[dict[str, Any]]:
 
     results: list[dict[str, Any]] = []
     for route in ROUTES:
-        selected = choose(catalogue, route, rotation_key, approved_models(route))
+        selected = choose(catalogue, route, rotation_key)
         if selected is None:
             results.append({"route": route, "result": "skipped", "reason": "no advertised model"})
             continue
@@ -145,8 +137,8 @@ def self_test() -> None:
         {"id": "a", "nrouter_endpoints": ["/v1/chat/completions"]},
         {"id": "c", "nrouter_endpoints": ["/v1/messages"]},
     ]
-    assert choose(catalogue, "/v1/chat/completions", "2026-09-14", ("a", "b"))["id"] in {"a", "b"}
-    assert choose(catalogue, "/v1/responses", "2026-09-14", ("a",)) is None
+    assert choose(catalogue, "/v1/chat/completions", "2026-09-14")["id"] in {"a", "b"}
+    assert choose(catalogue, "/v1/responses", "2026-09-14") is None
     responses_payload = payload("/v1/responses", "model")
     assert responses_payload["input"] == "OK"
     assert responses_payload["max_output_tokens"] == 16
