@@ -57,7 +57,8 @@ def payload(route: str, model: str) -> dict[str, Any]:
         return {"model": model, "max_tokens": 2, "messages": [{"role": "user", "content": "OK"}]}
     if route == "/v1/chat/completions":
         return {"model": model, "max_tokens": 2, "messages": [{"role": "user", "content": "OK"}]}
-    return {"model": model, "input": "OK", "max_output_tokens": 2}
+    # OpenAI's Responses API rejects the two-token minimum used by the other text wires.
+    return {"model": model, "input": "OK", "max_output_tokens": 16}
 
 
 def call(base_url: str, api_key: str, route: str, body: dict[str, Any]) -> tuple[int, dict[str, str], str]:
@@ -146,7 +147,9 @@ def self_test() -> None:
     ]
     assert choose(catalogue, "/v1/chat/completions", "2026-09-14", ("a", "b"))["id"] in {"a", "b"}
     assert choose(catalogue, "/v1/responses", "2026-09-14", ("a",)) is None
-    assert payload("/v1/responses", "model")["input"] == "OK"
+    responses_payload = payload("/v1/responses", "model")
+    assert responses_payload["input"] == "OK"
+    assert responses_payload["max_output_tokens"] == 16
 
 
 def main() -> int:
