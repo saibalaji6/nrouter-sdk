@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run a tiny, date-rotated nRouter text-provider canary.
+"""Run a tiny, run-rotated nRouter text-provider canary.
 
 The script deliberately uses only the standard library. It discovers callable
 models from /v1/models rather than maintaining a stale model list in this
@@ -79,7 +79,7 @@ def call(base_url: str, api_key: str, route: str, body: dict[str, Any]) -> tuple
         return 0, {}, f"transport: {error.reason}"
 
 
-def run(base_url: str, api_key: str, run_date: str) -> list[dict[str, Any]]:
+def run(base_url: str, api_key: str, rotation_key: str) -> list[dict[str, Any]]:
     request = urllib.request.Request(
         f"{base_url.rstrip('/')}/models", headers={"Authorization": f"Bearer {api_key}"}
     )
@@ -91,7 +91,7 @@ def run(base_url: str, api_key: str, run_date: str) -> list[dict[str, Any]]:
 
     results: list[dict[str, Any]] = []
     for route in ROUTES:
-        selected = choose(catalogue, route, run_date, approved_models(route))
+        selected = choose(catalogue, route, rotation_key, approved_models(route))
         if selected is None:
             results.append({"route": route, "result": "skipped", "reason": "no advertised model"})
             continue
@@ -112,11 +112,11 @@ def run(base_url: str, api_key: str, run_date: str) -> list[dict[str, Any]]:
     return results
 
 
-def write_summary(results: list[dict[str, Any]], run_date: str) -> None:
+def write_summary(results: list[dict[str, Any]], rotation_key: str) -> None:
     lines = [
         "# nRouter provider sentinel",
         "",
-        f"Rotation date: {run_date}",
+        f"Rotation key: {rotation_key}",
         "",
         "| Provider | Model | Endpoint | Result | Status | Latency | Request ID |",
         "| --- | --- | --- | --- | --- | --- | --- |",
@@ -155,7 +155,7 @@ def self_test() -> None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", default="provider-sentinel.json")
-    parser.add_argument("--date", default=date.today().isoformat())
+    parser.add_argument("--rotation-key", default=os.getenv("GITHUB_RUN_NUMBER", date.today().isoformat()))
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
     if args.self_test:
@@ -165,9 +165,9 @@ def main() -> int:
     api_key = os.getenv("NROUTER_API_KEY")
     if not api_key:
         raise RuntimeError("NROUTER_API_KEY is required for a billed provider canary")
-    results = run(os.getenv("NROUTER_BASE_URL", "https://api.nrouter.ai/v1"), api_key, args.date)
-    Path(args.output).write_text(json.dumps({"date": args.date, "results": results}, indent=2) + "\n", encoding="utf-8")
-    write_summary(results, args.date)
+    results = run(os.getenv("NROUTER_BASE_URL", "https://api.nrouter.ai/v1"), api_key, args.rotation_key)
+    Path(args.output).write_text(json.dumps({"rotation_key": args.rotation_key, "results": results}, indent=2) + "\n", encoding="utf-8")
+    write_summary(results, args.rotation_key)
     return 1 if any(result["result"] == "failed" for result in results) else 0
 
 
