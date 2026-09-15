@@ -29,6 +29,11 @@ def provider_label(model: dict[str, Any]) -> str:
     return str(model.get("maker") or model.get("owned_by") or model.get("provider") or "catalogue")
 
 
+def rotation_index(rotation_key: str) -> int:
+    """Use consecutive GitHub run numbers; hash only outside GitHub Actions."""
+    return int(rotation_key) if rotation_key.isdecimal() else int(hashlib.sha256(rotation_key.encode()).hexdigest(), 16)
+
+
 def choose(catalogue: list[dict[str, Any]], route: str, rotation_key: str) -> dict[str, Any] | None:
     """Rotate through advertised providers, then models, for this endpoint."""
     candidates = sorted(
@@ -38,9 +43,10 @@ def choose(catalogue: list[dict[str, Any]], route: str, rotation_key: str) -> di
     if not candidates:
         return None
     providers = sorted({provider_label(item) for item in candidates})
-    provider_index = int(hashlib.sha256(f"{rotation_key}:{route}:provider".encode()).hexdigest(), 16) % len(providers)
+    index = rotation_index(rotation_key)
+    provider_index = index % len(providers)
     provider_models = [item for item in candidates if provider_label(item) == providers[provider_index]]
-    model_index = int(hashlib.sha256(f"{rotation_key}:{route}:model".encode()).hexdigest(), 16) % len(provider_models)
+    model_index = (index // len(providers)) % len(provider_models)
     return provider_models[model_index]
 
 
@@ -133,11 +139,12 @@ def write_summary(results: list[dict[str, Any]], rotation_key: str) -> None:
 
 def self_test() -> None:
     catalogue = [
-        {"id": "b", "nrouter_endpoints": ["/v1/chat/completions"]},
-        {"id": "a", "nrouter_endpoints": ["/v1/chat/completions"]},
+        {"id": "b", "maker": "B", "nrouter_endpoints": ["/v1/chat/completions"]},
+        {"id": "a", "maker": "A", "nrouter_endpoints": ["/v1/chat/completions"]},
         {"id": "c", "nrouter_endpoints": ["/v1/messages"]},
     ]
     assert choose(catalogue, "/v1/chat/completions", "2026-09-14")["id"] in {"a", "b"}
+    assert choose(catalogue, "/v1/chat/completions", "1")["id"] != choose(catalogue, "/v1/chat/completions", "2")["id"]
     assert choose(catalogue, "/v1/responses", "2026-09-14") is None
     responses_payload = payload("/v1/responses", "model")
     assert responses_payload["input"] == "OK"
