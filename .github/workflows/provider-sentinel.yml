@@ -28,7 +28,7 @@ jobs:
           {
             echo '# Provider Sentinel is safely disabled'
             echo
-            echo 'Create a dedicated, budget-capped virtual API key, save it as `NROUTER_PROVIDER_SENTINEL_API_KEY`, then set the repository variable `NROUTER_PROVIDER_SENTINEL_ENABLED` to `true`.'
+            echo 'Confirm the existing test key has a hard budget cap, then set the repository variable `NROUTER_PROVIDER_SENTINEL_ENABLED` to `true`.'
             echo 'Until then, this scheduled run sends no provider request and consumes no nRouter credits.'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -37,7 +37,7 @@ jobs:
     name: Rotating provider canary
     runs-on: ubuntu-latest
     env:
-      NROUTER_API_KEY: ${{ secrets.NROUTER_PROVIDER_SENTINEL_API_KEY }}
+      NROUTER_API_KEY: ${{ secrets.NROUTER_SDK_HEALTH_API_KEY }}
       NROUTER_BASE_URL: https://api.nrouter.ai/v1
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
