@@ -305,15 +305,15 @@ nothing):
 | Language | Install | Registry URL | Registry status | Package | Typed errors | `x-nr-*` metadata |
 |----------|---------|--------------|---|---------|---|---|
 | **Python** | `pip install nrouter-sdk` | [pypi.org/project/nrouter-sdk](https://pypi.org/project/nrouter-sdk/) | ✅ PUBLISHED `3.1.2` | [`sdks/python/`](sdks/python/) | ✅ typed wrappers | ✅ `client.last_response` |
-| **TypeScript / JS** | `npm install @nrouter_ai/sdk` | [npmjs.com/package/@nrouter_ai/sdk](https://www.npmjs.com/package/@nrouter_ai/sdk) | ✅ PUBLISHED `3.1.2` | [`sdks/js/`](sdks/js/) | ✅ 9 codes | ✅ all `x-nr-*` headers |
-| **Java** | Maven `ai.nrouter:nrouter-sdk:3.1.2` | [central.sonatype.com](https://central.sonatype.com/artifact/ai.nrouter/nrouter-sdk) | ✅ PUBLISHED `3.1.2` | [`sdks/java/`](sdks/java/) | ✅ 9 codes (native HTTP surface) | ✅ all `x-nr-*` headers (native HTTP surface) |
-| **Kotlin** | Maven `ai.nrouter:nrouter-sdk-kotlin:3.1.2` | [central.sonatype.com](https://central.sonatype.com/artifact/ai.nrouter/nrouter-sdk-kotlin) | ✅ PUBLISHED `3.1.2` | [`sdks/kotlin/`](sdks/kotlin/) | ✅ 9 codes | ✅ all `x-nr-*` headers |
-| **Android** | Maven `ai.nrouter:nrouter-sdk-android:3.1.2` | [central.sonatype.com](https://central.sonatype.com/artifact/ai.nrouter/nrouter-sdk-android) | 🧪 PUBLIC PREVIEW `3.1.2` | [`sdks/android/`](sdks/android/) | ✅ 9 codes | ✅ all `x-nr-*` headers |
-| **Rust** | `cargo add nrouter@3.1.2` | [crates.io/crates/nrouter](https://crates.io/crates/nrouter) | 🧪 PUBLIC PREVIEW `3.1.2` | [`sdks/rust/`](sdks/rust/) | ✅ 9 codes | ✅ all `x-nr-*` headers |
-| **Dart / Flutter** | `dart pub add nrouter` | [pub.dev/packages/nrouter](https://pub.dev/packages/nrouter) | 🧪 PUBLIC PREVIEW `3.1.2` | [`sdks/dart/`](sdks/dart/) | ✅ 9 codes | ✅ all `x-nr-*` headers |
-| **Swift** | SwiftPM, this repo's URL | [github.com/nRouterGateway/nrouter-sdk](https://github.com/nRouterGateway/nrouter-sdk) | ✅ git tag `3.1.2` | [`sdks/swift/`](sdks/swift/) | ✅ 9 codes | ✅ all `x-nr-*` headers |
-| **R** | `install.packages("nrouter", repos = c(nroutergateway = "https://nroutergateway.r-universe.dev", CRAN = "https://cloud.r-project.org"))` | [nroutergateway.r-universe.dev/nrouter](https://nroutergateway.r-universe.dev/nrouter) | 🧪 PUBLIC PREVIEW `3.1.2` | [`sdks/r/`](sdks/r/) | ✅ 9 classed conditions | ✅ all `x-nr-*` headers |
-| **Go** | `go get github.com/nRouterGateway/nrouter-sdk/sdks/go/v3@v3.1.2` | [pkg.go.dev/github.com/nRouterGateway/nrouter-sdk/sdks/go/v3](https://pkg.go.dev/github.com/nRouterGateway/nrouter-sdk/sdks/go/v3) | ✅ git tag `sdks/go/v3.1.2` | [`sdks/go/`](sdks/go/) | ✅ 9 codes | ✅ all `x-nr-*` headers |
+| **TypeScript / JS** | `npm install @nrouter_ai/sdk` | [npmjs.com/package/@nrouter_ai/sdk](https://www.npmjs.com/package/@nrouter_ai/sdk) | ✅ PUBLISHED `3.1.2` | [`sdks/js/`](sdks/js/) | ✅ 11 codes | ✅ all `x-nr-*` headers |
+| **Java** | Maven `ai.nrouter:nrouter-sdk:3.1.2` | [central.sonatype.com](https://central.sonatype.com/artifact/ai.nrouter/nrouter-sdk) | ✅ PUBLISHED `3.1.2` | [`sdks/java/`](sdks/java/) | ✅ 11 codes (native HTTP surface) | ✅ all `x-nr-*` headers (native HTTP surface) |
+| **Kotlin** | Maven `ai.nrouter:nrouter-sdk-kotlin:3.1.2` | [central.sonatype.com](https://central.sonatype.com/artifact/ai.nrouter/nrouter-sdk-kotlin) | ✅ PUBLISHED `3.1.2` | [`sdks/kotlin/`](sdks/kotlin/) | ✅ 11 codes | ✅ all `x-nr-*` headers |
+| **Android** | Maven `ai.nrouter:nrouter-sdk-android:3.1.2` | [central.sonatype.com](https://central.sonatype.com/artifact/ai.nrouter/nrouter-sdk-android) | 🧪 PUBLIC PREVIEW `3.1.2` | [`sdks/android/`](sdks/android/) | ✅ 11 codes | ✅ all `x-nr-*` headers |
+| **Rust** | `cargo add nrouter@3.1.2` | [crates.io/crates/nrouter](https://crates.io/crates/nrouter) | 🧪 PUBLIC PREVIEW `3.1.2` | [`sdks/rust/`](sdks/rust/) | ✅ 11 codes | ✅ all `x-nr-*` headers |
+| **Dart / Flutter** | `dart pub add nrouter` | [pub.dev/packages/nrouter](https://pub.dev/packages/nrouter) | 🧪 PUBLIC PREVIEW `3.1.2` | [`sdks/dart/`](sdks/dart/) | ✅ 11 codes | ✅ all `x-nr-*` headers |
+| **Swift** | SwiftPM, this repo's URL | [github.com/nRouterGateway/nrouter-sdk](https://github.com/nRouterGateway/nrouter-sdk) | ✅ git tag `3.1.2` | [`sdks/swift/`](sdks/swift/) | ✅ 11 codes | ✅ all `x-nr-*` headers |
+| **R** | `install.packages("nrouter", repos = c(nroutergateway = "https://nroutergateway.r-universe.dev", CRAN = "https://cloud.r-project.org"))` | [nroutergateway.r-universe.dev/nrouter](https://nroutergateway.r-universe.dev/nrouter) | 🧪 PUBLIC PREVIEW `3.1.2` | [`sdks/r/`](sdks/r/) | ✅ 11 classed conditions | ✅ all `x-nr-*` headers |
+| **Go** | `go get github.com/nRouterGateway/nrouter-sdk/sdks/go/v3@v3.1.2` | [pkg.go.dev/github.com/nRouterGateway/nrouter-sdk/sdks/go/v3](https://pkg.go.dev/github.com/nRouterGateway/nrouter-sdk/sdks/go/v3) | ✅ git tag `sdks/go/v3.1.2` | [`sdks/go/`](sdks/go/) | ✅ 11 codes | ✅ all `x-nr-*` headers |
 
 Verify any row rather than trusting it:
 
@@ -341,7 +341,7 @@ curl -s https://nroutergateway.r-universe.dev/src/contrib/PACKAGES | grep -A4 '^
 
 Java keeps its vendor-compatible OpenAI factory and adds a Java 11 native HTTP
 surface for all 15 gateway operations, four incremental SSE wires, every
-`x-nr-*` header and nine typed gateway errors.
+`x-nr-*` header and eleven typed gateway errors.
 JavaScript/TypeScript and the seven first-party native transports expose the
 same contract. Android delegates those guarantees to Kotlin; Python adds the
 same nRouter typing and metadata capture around its vendor client.
@@ -583,14 +583,36 @@ not itself the register of which ones exist.
 | `x-nr-total-tokens` | integer | Total token count, including cache tokens |
 | `x-nr-cache-read-tokens` | integer | Cache-read tokens; emitted only when nonzero |
 | `x-nr-cache-write-tokens` | integer | Cache-write tokens; emitted only when nonzero |
-| `x-nr-limit-source` | string | `key`, `plan`, `team`, `user`, or `budget` on 429 responses |
+| `x-nr-limit-source` | string | `key`, `plan`, `team`, `user`, `budget`, `plan_window_h8`, `plan_window_day`, `plan_window_week`, `capacity`, `plan_allowance_exhausted`, or `plan_required` on 429 and 402 responses |
 | `x-nr-budget-warning` | string | A soft budget you configured was crossed by this request, which still served; `<scope> soft_budget <spend>/<ceiling>`, e.g. `org soft_budget 80.00/100.00` |
 | `x-nr-guardrails` | string | Pre-call guardrail posture; absent means the response makes no guardrail claim, never `none`, which is an explicit token |
 | `x-nr-auth-reason` | string | On a 401, the gateway's stable reason for refusing the key |
 | `x-nr-response-cache` | string | `hit` or `miss`; absent when the response cache did not participate |
 | `x-nr-response-cache-age` | integer | Age of a cache `hit` in seconds |
+| `x-nr-funding-source` | string | Which balance paid for this request: the plan's usage allowance or credits (`allowance` or `credits`) |
+| `x-nr-allowance-reset` | integer | Seconds until the tightest usage-allowance window resets |
 
 Python SDK captures these automatically in `client.last_response`. Other languages read them from HTTP response headers.
+
+---
+
+## Error Codes
+
+The gateway classifies refusals into typed error codes:
+
+| Code | HTTP | Exception Class | Description |
+|------|------|-----------------|-------------|
+| `invalid_request` | 400 | `nRouterRequestError` | Invalid JSON or request shape |
+| `guardrail_blocked` | 400 | `nRouterGuardrailBlockedError` | A guardrail denied the request (pre-call) or withheld the response (post-call) |
+| `invalid_api_key` | 401 | `nRouterAuthenticationError` | Virtual-key authentication refused; see `x-nr-auth-reason` |
+| `insufficient_credits` | 402 | `nRouterCreditError` | Reserve failed; nothing was spent |
+| `model_not_found` | 404 | `nRouterNotFoundError` | Model alias absent or not visible to this key |
+| `rate_limit_exceeded` | 429 | `nRouterRateLimitError` | RPM limit exceeded; see `x-nr-limit-source` |
+| `tpm_limit_exceeded` | 429 | `nRouterRateLimitError` | TPM limit exceeded; see `x-nr-limit-source` |
+| `credit_check_failed` | 503 | `nRouterServiceError` | Credit system unavailable |
+| `service_unavailable` | 503 | `nRouterServiceError` | A required gateway dependency is unavailable |
+| `plan_allowance_exhausted` | 402 | `nRouterCreditError` | The plan's usage allowance for this billing period is used up. It resets at the next billing period (see `x-nr-allowance-reset`). |
+| `plan_required` | 402 | `nRouterCreditError` | Only plan subscribers can use `nrouter/auto`, or the plan's usage allowance is paused pending payment. Named models are paid from credits. |
 
 ---
 

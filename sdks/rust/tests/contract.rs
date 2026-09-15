@@ -42,6 +42,8 @@ fn every_spec_header_is_read() {
         "x-nr-response-cache-age",
         "x-nr-budget-warning",
         "x-nr-guardrails",
+        "x-nr-funding-source",
+        "x-nr-allowance-reset",
     ] {
         assert!(
             HEADER_NAMES.contains(&name),

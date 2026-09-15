@@ -99,7 +99,7 @@ class ContractTest {
             "x-nr-input-tokens", "x-nr-output-tokens", "x-nr-total-tokens",
             "x-nr-cache-read-tokens", "x-nr-cache-write-tokens", "x-nr-limit-source",
             "x-nr-auth-reason", "x-nr-response-cache", "x-nr-response-cache-age",
-            "x-nr-budget-warning", "x-nr-guardrails",
+            "x-nr-budget-warning", "x-nr-guardrails", "x-nr-funding-source", "x-nr-allowance-reset",
         )
         assertEquals(expected.size, NRouterResponseMeta.HEADER_NAMES.size)
         expected.forEach {
@@ -716,6 +716,155 @@ class ContractTest {
         assertFailsWith<NRouterError.Transport> { client.chatCompletions(JSONObject()) }
         val elapsedMillis = (System.nanoTime() - started) / 1_000_000
         assertTrue(elapsedMillis < 4_000, "the call was not cut: ${elapsedMillis}ms")
+    }
+
+    @Test
+    fun `a transport failure keeps the underlying exception and names its class`() = runBlocking {
+        // A failed live run that says only "Transport: Connection refused" can't
+        // be told apart from DNS, TLS, or a proxy failure. The cause and its
+        // class have to survive the wrap.
+        val dead = MockWebServer().also { it.start() }
+        val url = dead.url("/v1").toString()
+        dead.shutdown()
+        val error = assertFailsWith<NRouterError.Transport> {
+            NRouter(apiKey = "sk-nrouter-test", baseURL = url).chatCompletions(JSONObject())
+        }
+        val cause = assertNotNull(error.cause, "the underlying exception was dropped")
+        assertTrue(cause is java.io.IOException, "unexpected cause type ${cause.javaClass.name}")
+        assertTrue(
+            error.message.orEmpty().contains(cause.javaClass.name),
+            "the message does not name ${cause.javaClass.name}: ${error.message}",
+        )
+    }
+
+    @Test
+    fun `a streaming transport failure keeps the underlying exception`() = runBlocking {
+        val dead = MockWebServer().also { it.start() }
+        val url = dead.url("/v1").toString()
+        dead.shutdown()
+        val error = assertFailsWith<NRouterError.Transport> {
+            NRouter(apiKey = "sk-nrouter-test", baseURL = url).chatCompletionsStream(JSONObject()).toList()
+        }
+        val cause = assertNotNull(error.cause, "the underlying exception was dropped")
+        assertTrue(error.message.orEmpty().contains(cause.javaClass.name), "message: ${error.message}")
+    }
+
+    @Test
+    fun `a stream cut mid-body is a typed transport error, not a raw IOException`() = runBlocking {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("content-type", "text/event-stream")
+                .setBody("data: {\"choices\":[]}\n\n".repeat(64))
+                .setSocketPolicy(okhttp3.mockwebserver.SocketPolicy.DISCONNECT_DURING_RESPONSE_BODY),
+        )
+        val error = runCatching { clientFor(server).chatCompletionsStream(JSONObject()).toList() }
+            .exceptionOrNull()
+        assertTrue(error is NRouterError.Transport, "expected Transport, got ${error?.javaClass?.name}: ${error?.message}")
+    }
+
+    @Test
+    fun `a transport message names the root cause and stays redacted`() {
+        val root = javax.net.ssl.SSLHandshakeException("PKIX path building failed")
+        val error = NRouterError.Transport(
+            "call to sk-nrouter-abcdefghijklmnop failed",
+            java.io.IOException("unexpected end of stream", root),
+        )
+        val message = error.message.orEmpty()
+        assertTrue(message.contains("java.io.IOException"), message)
+        assertTrue(message.contains("javax.net.ssl.SSLHandshakeException"), message)
+        assertTrue(message.contains("PKIX path building failed"), message)
+        assertFalse(message.contains("abcdefghijklmnop"), "a key survived redaction: $message")
+        assertSame(root, error.cause?.cause)
+    }
+
+    @Test
+    fun `Transport keeps its one-argument JVM constructor`() {
+        // Code compiled against the one-argument constructor must still link
+        // after an upgrade; a defaulted parameter alone would drop it.
+        val ctor = NRouterError.Transport::class.java.getConstructor(String::class.java)
+        assertEquals("boom", ctor.newInstance("boom").message)
+    }
+
+    @Test
+    fun `a cause carrying a key is attached redacted, never raw`() {
+        val leaky = java.io.IOException(
+            "proxy rejected sk-nrouter-abcdefghijklmnop",
+            java.net.ConnectException("while sending sk-nrouter-zyxwvutsrqponmlk"),
+        )
+        val error = NRouterError.Transport("call failed", leaky)
+        val trace = error.stackTraceToString()
+        assertFalse(trace.contains("abcdefghijklmnop"), trace)
+        assertFalse(trace.contains("zyxwvutsrqponmlk"), trace)
+        assertTrue(trace.contains("java.io.IOException"), trace)
+        assertTrue(trace.contains("java.net.ConnectException"), trace)
+        assertNotNull(error.cause?.cause, "the cause chain was cut")
+    }
+
+    @Test
+    fun `a key in a SUPPRESSED exception is redacted too`() {
+        // try-with-resources cleanup attaches its own failure as suppressed, and every
+        // logger prints `Suppressed:` blocks with the stack trace.
+        val cause = java.io.IOException("socket closed")
+        cause.addSuppressed(IllegalStateException("close failed for sk-nrouter-abcdefghijklmnop"))
+        val trace = NRouterError.Transport("call failed", cause).stackTraceToString()
+        assertFalse(trace.contains("abcdefghijklmnop"), trace)
+        assertTrue(trace.contains("java.lang.IllegalStateException"), trace)
+    }
+
+    @Test
+    fun `a key deeper than the walk bound is redacted, not trusted`() {
+        var chain: Throwable = java.io.IOException("root has sk-nrouter-abcdefghijklmnop")
+        repeat(40) { chain = java.io.IOException("wrapper $it", chain) }
+        val trace = NRouterError.Transport("call failed", chain).stackTraceToString()
+        assertFalse(trace.contains("abcdefghijklmnop"), trace)
+    }
+
+    @Test
+    fun `a shared cause graph is copied once per node, not once per path`() {
+        // Each level reaches the next three ways (cause + two suppressed), so a copy
+        // that walks paths instead of nodes does 3^14 work and never returns.
+        var node: Throwable = java.io.IOException("bottom has sk-nrouter-abcdefghijklmnop")
+        repeat(14) {
+            val next = node
+            node = java.io.IOException("level $it", next).apply { addSuppressed(next); addSuppressed(next) }
+        }
+        val root = node
+        var error: NRouterError.Transport? = null
+        val worker = Thread { error = NRouterError.Transport("call failed", root) }.apply { isDaemon = true }
+        worker.start()
+        worker.join(5_000)
+        assertFalse(worker.isAlive, "redacting a 15-node shared graph did not finish in 5 s")
+        val built = assertNotNull(error)
+        val copies = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Throwable, Boolean>())
+        val queue = ArrayDeque<Throwable>(listOfNotNull(built.cause))
+        while (queue.isNotEmpty()) {
+            val t = queue.removeFirst()
+            if (!copies.add(t)) continue
+            t.cause?.let { queue.add(it) }
+            t.suppressed.forEach { queue.add(it) }
+        }
+        assertTrue(copies.size <= 15, "copied ${copies.size} throwables for a 15-node graph")
+        assertFalse(built.stackTraceToString().contains("abcdefghijklmnop"))
+    }
+
+    @Test
+    fun `a cause graph too large to inspect is redacted, not trusted`() {
+        var chain: Throwable = java.io.IOException("clean root")
+        repeat(80) { chain = java.io.IOException("wrapper $it", chain) }
+        val error = NRouterError.Transport("call failed", chain)
+        assertTrue(error.cause is RedactedCause, "an 81-throwable graph was attached unchecked")
+    }
+
+    @Test
+    fun `a cause with no key is kept as the original exception`() {
+        val plain = java.net.SocketTimeoutException("timeout")
+        assertSame(plain, NRouterError.Transport("call failed", plain).cause)
+    }
+
+    @Test
+    fun `a transport error with no cause keeps its plain message`() {
+        assertEquals("Timeout waiting for video job v1", NRouterError.Transport("Timeout waiting for video job v1").message)
     }
 
     @Test

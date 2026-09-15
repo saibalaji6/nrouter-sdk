@@ -1,4 +1,6 @@
-import cjs from './index.js';
+import cjsDefault, * as cjsNamespace from './index.js';
+
+const cjs = cjsDefault && typeof cjsDefault === 'object' ? cjsDefault : cjsNamespace;
 
 const {
   nRouter,

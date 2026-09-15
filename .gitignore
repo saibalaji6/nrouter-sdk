@@ -62,3 +62,7 @@ venv/
 .env.*
 !.env.example
 
+# Scratch directories
+.scratch/
+
+

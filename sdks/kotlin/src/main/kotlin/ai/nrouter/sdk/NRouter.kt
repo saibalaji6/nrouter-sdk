@@ -309,7 +309,7 @@ public class NRouter @JvmOverloads constructor(
         val call = httpClient.newCall(request)
         call.enqueue(object : okhttp3.Callback {
             override fun onFailure(call: okhttp3.Call, e: java.io.IOException) {
-                close(NRouterError.Transport(e.message ?: "the stream never reached nRouter"))
+                close(NRouterError.Transport(e.message ?: "the stream never reached nRouter", e))
             }
 
             override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
@@ -335,25 +335,57 @@ public class NRouter @JvmOverloads constructor(
                 }
 
                 launch(Dispatchers.IO) {
-                    response.use {
-                        val source = it.body?.source()
-                        if (source == null) {
-                            close(NRouterError.Transport("nRouter returned an empty stream body"))
-                            return@use
-                        }
-                        var event: String? = null
-                        val data = mutableListOf<String>()
-                        var terminated = false
-                        while (true) {
-                            val line = source.readUtf8Line() ?: break
-                            if (line.isEmpty()) {
-                                if (data.isEmpty()) {
+                    // A socket reset MID-STREAM surfaces from readUtf8Line as a
+                    // raw IOException. Unwrapped it escapes this SDK's error
+                    // contract, exactly as the buffered path's comment explains.
+                    try {
+                        response.use {
+                            val source = it.body?.source()
+                            if (source == null) {
+                                close(NRouterError.Transport("nRouter returned an empty stream body"))
+                                return@use
+                            }
+                            var event: String? = null
+                            val data = mutableListOf<String>()
+                            var terminated = false
+                            while (true) {
+                                val line = source.readUtf8Line() ?: break
+                                if (line.isEmpty()) {
+                                    if (data.isEmpty()) {
+                                        event = null
+                                        continue
+                                    }
+                                    when (val frame = parseStreamFrame(event, data.joinToString("\n"), meta)) {
+                                        is ParsedStreamFrame.Chunk -> {
+                                            if (!trySend(frame.value).isSuccess) return@use
+                                        }
+                                        is ParsedStreamFrame.Error -> {
+                                            close(frame.value)
+                                            return@use
+                                        }
+                                        ParsedStreamFrame.Done -> {
+                                            terminated = true
+                                            close()
+                                            return@use
+                                        }
+                                        ParsedStreamFrame.Skip -> Unit
+                                    }
                                     event = null
+                                    data.clear()
                                     continue
                                 }
+                                if (line.startsWith(":")) continue
+                                val name = line.substringBefore(':')
+                                val value = line.substringAfter(':', "").removePrefix(" ")
+                                when (name) {
+                                    "event" -> event = value
+                                    "data" -> data += value
+                                }
+                            }
+                            if (!terminated && data.isNotEmpty()) {
                                 when (val frame = parseStreamFrame(event, data.joinToString("\n"), meta)) {
                                     is ParsedStreamFrame.Chunk -> {
-                                        if (!trySend(frame.value).isSuccess) return@use
+                                        trySend(frame.value)
                                     }
                                     is ParsedStreamFrame.Error -> {
                                         close(frame.value)
@@ -366,40 +398,15 @@ public class NRouter @JvmOverloads constructor(
                                     }
                                     ParsedStreamFrame.Skip -> Unit
                                 }
-                                event = null
-                                data.clear()
-                                continue
                             }
-                            if (line.startsWith(":")) continue
-                            val name = line.substringBefore(':')
-                            val value = line.substringAfter(':', "").removePrefix(" ")
-                            when (name) {
-                                "event" -> event = value
-                                "data" -> data += value
+                            if (terminated) {
+                                close()
+                            } else {
+                                close(NRouterError.Transport("the stream ended before its terminal event"))
                             }
                         }
-                        if (!terminated && data.isNotEmpty()) {
-                            when (val frame = parseStreamFrame(event, data.joinToString("\n"), meta)) {
-                                is ParsedStreamFrame.Chunk -> {
-                                    trySend(frame.value)
-                                }
-                                is ParsedStreamFrame.Error -> {
-                                    close(frame.value)
-                                    return@use
-                                }
-                                ParsedStreamFrame.Done -> {
-                                    terminated = true
-                                    close()
-                                    return@use
-                                }
-                                ParsedStreamFrame.Skip -> Unit
-                            }
-                        }
-                        if (terminated) {
-                            close()
-                        } else {
-                            close(NRouterError.Transport("the stream ended before its terminal event"))
-                        }
+                    } catch (e: java.io.IOException) {
+                        close(NRouterError.Transport(e.message ?: "the stream was cut before its terminal event", e))
                     }
                 }
             }
@@ -512,7 +519,8 @@ public class NRouter @JvmOverloads constructor(
                     if (continuation.isCancelled) return
                     continuation.resumeWithException(
                         NRouterError.Transport(
-                            e.message ?: "the request never reached nRouter"
+                            e.message ?: "the request never reached nRouter",
+                            e,
                         )
                     )
                 }
@@ -533,7 +541,8 @@ public class NRouter @JvmOverloads constructor(
                         continuation.resumeWithException(
                             if (e is java.io.IOException) {
                                 NRouterError.Transport(
-                                    e.message ?: "the response body could not be read"
+                                    e.message ?: "the response body could not be read",
+                                    e,
                                 )
                             } else {
                                 e
@@ -571,7 +580,8 @@ public class NRouter @JvmOverloads constructor(
                 val body = runCatching { JSONObject(text) }.getOrElse { e ->
                     throw NRouterError.Transport(
                         "nRouter returned $status with unparseable JSON (${e.message}); " +
-                            "the request was billed but the body did not arrive intact."
+                            "the request was billed but the body did not arrive intact.",
+                        e,
                     )
                 }
                 Response(body, meta, status)

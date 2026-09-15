@@ -87,6 +87,39 @@ jobs:
       - name: Build TypeScript bundle & types
         run: npm run build
 
+      - name: Verify pnpm and Bun consumers
+        run: |
+          set -euo pipefail
+          pkg="$(npm pack --pack-destination "$RUNNER_TEMP" --silent)"
+          pkg="$RUNNER_TEMP/$pkg"
+
+          corepack enable
+          corepack prepare pnpm@10.30.3 --activate
+          npm install -g bun@1.4.2 --registry=https://registry.npmjs.org
+
+          pnpm_dir="$RUNNER_TEMP/nrouter-pnpm-consumer"
+          mkdir "$pnpm_dir"
+          cd "$pnpm_dir"
+          pnpm init
+          pnpm add "$pkg"
+          pnpm add -D typescript
+          printf '%s\n' "const sdk = require('@nrouter_ai/sdk'); if (typeof sdk.nRouter !== 'function' || typeof sdk.default !== 'function' || sdk.default !== sdk.nRouter) process.exit(1);" > cjs.cjs
+          printf '%s\n' "import nRouter, { nRouter as NamedRouter } from '@nrouter_ai/sdk'; if (typeof nRouter !== 'function' || typeof NamedRouter !== 'function' || nRouter !== NamedRouter) process.exit(1);" > esm.mjs
+          printf '%s\n' "import nRouter, { nRouter as NamedRouter } from '@nrouter_ai/sdk'; const a = new nRouter({ apiKey: 'sk-nrouter-test' }); const b = new NamedRouter({ apiKey: 'sk-nrouter-test' }); console.log(typeof a.nr, typeof b.nr);" > types.ts
+          node cjs.cjs
+          node esm.mjs
+          pnpm exec tsc --module NodeNext --moduleResolution NodeNext --target ES2022 --strict --noEmit types.ts
+
+          bun_dir="$RUNNER_TEMP/nrouter-bun-consumer"
+          mkdir "$bun_dir"
+          cd "$bun_dir"
+          bun init -y
+          bun add "$pkg"
+          cp "$pnpm_dir/cjs.cjs" "$pnpm_dir/esm.mjs" "$pnpm_dir/types.ts" .
+          bun cjs.cjs
+          bun esm.mjs
+          bun types.ts
+
       # The mock-gateway half of the demo E2E suite: step 0's static preflight
       # (example .env documentation and the .env ignore rules that keep a key
       # off this PUBLIC repo) plus the in-process gateway suites for the voice,

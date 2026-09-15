@@ -443,6 +443,24 @@ if [ -z "${JAVA_HOME:-}" ] && [ -d /opt/homebrew/opt/openjdk@17/libexec/openjdk.
   export PATH=/opt/homebrew/opt/openjdk@17/bin:$PATH
 fi
 
+# Both Gradle SDKs build with `jvmToolchain(11)`. Homebrew JDKs are not on
+# Gradle's auto-detection path on macOS, so name the ones this machine has,
+# at invocation time. Never commit these paths to gradle.properties: that file
+# is read on every machine, and a Windows build warns about paths it cannot have.
+GRADLE_JDK_PATHS=""
+for jdk in /opt/homebrew/opt/openjdk@11/libexec/openjdk.jdk/Contents/Home \
+           /opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home; do
+  if [ -d "$jdk" ]; then
+    GRADLE_JDK_PATHS="${GRADLE_JDK_PATHS:+$GRADLE_JDK_PATHS,}$jdk"
+  fi
+done
+GRADLE_JDK_ARGS=""
+if [ -n "$GRADLE_JDK_PATHS" ]; then
+  # %q because run_lane re-parses the lane with `bash -c`: a path with a space
+  # must stay one argument.
+  GRADLE_JDK_ARGS=$(printf '%q' "-Porg.gradle.java.installations.paths=$GRADLE_JDK_PATHS")
+fi
+
 if [ -z "${ANDROID_HOME:-}" ]; then
   if [ -d /opt/homebrew/share/android-commandlinetools/platforms/android-34 ]; then
     export ANDROID_HOME=/opt/homebrew/share/android-commandlinetools
@@ -511,10 +529,10 @@ run_lane "Java" "mvn jre" \
   "cd '$ROOT/sdks/java' && mvn -q test"
 
 run_lane "Kotlin" "jre" \
-  "cd '$ROOT/sdks/kotlin' && ./gradlew build publishToMavenLocal"
+  "cd '$ROOT/sdks/kotlin' && ./gradlew $GRADLE_JDK_ARGS build publishToMavenLocal"
 
 run_lane "Android" "jre android" \
-  "cd '$ROOT/sdks/android' && ./gradlew build"
+  "cd '$ROOT/sdks/android' && ./gradlew $GRADLE_JDK_ARGS build"
 
 run_lane "Go" "go" \
   "cd '$ROOT/sdks/go' && go test ./... && go test -race ./... && go vet ./..."

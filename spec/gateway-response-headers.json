@@ -1,5 +1,5 @@
 {
-  "source": "nrouter-rust-gateway/src/http/nr_headers.rs::all_emitted_names",
+  "source": "derived from the gateway's emitted header set",
   "source_commit": "pending-L4",
   "headers": [
     "x-nr-request-id",

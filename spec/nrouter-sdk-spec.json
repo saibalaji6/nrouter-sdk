@@ -348,14 +348,14 @@
       "path": "/v1/videos/{id}",
       "sdk": "videos.retrieve()",
       "features": [],
-      "note": "Collection is free — the customer is billed when the video is CREATED, not when its status is polled or its bytes are downloaded (gateway src/http/videos.rs: \"Create bills; collection is free\")."
+      "note": "Collection is free — the customer is billed when the video is CREATED, not when its status is polled or its bytes are downloaded."
     },
     {
       "method": "GET",
       "path": "/v1/videos/{id}/content",
       "sdk": "videos.download_content()",
       "features": [],
-      "note": "Collection is free — the customer is billed when the video is CREATED, not when its status is polled or its bytes are downloaded (gateway src/http/videos.rs: \"Create bills; collection is free\")."
+      "note": "Collection is free — the customer is billed when the video is CREATED, not when its status is polled or its bytes are downloaded."
     }
   ],
   "unsupported_endpoints": {
