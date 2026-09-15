@@ -29,9 +29,21 @@ def provider_label(model: dict[str, Any]) -> str:
     return str(model.get("provider") or model.get("owned_by") or model.get("maker") or "catalogue")
 
 
-def choose(catalogue: list[dict[str, Any]], route: str, run_date: str) -> dict[str, Any] | None:
+def approved_models(route: str) -> tuple[str, ...]:
+    """Read the operator-approved, low-cost candidates for one route."""
+    names = {
+        "/v1/messages": "NROUTER_PROVIDER_SENTINEL_MESSAGES_MODELS",
+        "/v1/chat/completions": "NROUTER_PROVIDER_SENTINEL_CHAT_MODELS",
+        "/v1/responses": "NROUTER_PROVIDER_SENTINEL_RESPONSES_MODELS",
+    }
+    return tuple(model.strip() for model in os.getenv(names[route], "").split(",") if model.strip())
+
+
+def choose(
+    catalogue: list[dict[str, Any]], route: str, run_date: str, allowed: tuple[str, ...]
+) -> dict[str, Any] | None:
     candidates = sorted(
-        (item for item in catalogue if route in item.get("nrouter_endpoints", [])),
+        (item for item in catalogue if item.get("id") in allowed and route in item.get("nrouter_endpoints", [])),
         key=lambda item: str(item.get("id", "")),
     )
     if not candidates:
@@ -78,7 +90,7 @@ def run(base_url: str, api_key: str, run_date: str) -> list[dict[str, Any]]:
 
     results: list[dict[str, Any]] = []
     for route in ROUTES:
-        selected = choose(catalogue, route, run_date)
+        selected = choose(catalogue, route, run_date, approved_models(route))
         if selected is None:
             results.append({"route": route, "result": "skipped", "reason": "no advertised model"})
             continue
@@ -132,8 +144,8 @@ def self_test() -> None:
         {"id": "a", "nrouter_endpoints": ["/v1/chat/completions"]},
         {"id": "c", "nrouter_endpoints": ["/v1/messages"]},
     ]
-    assert choose(catalogue, "/v1/chat/completions", "2026-09-14")["id"] in {"a", "b"}
-    assert choose(catalogue, "/v1/responses", "2026-09-14") is None
+    assert choose(catalogue, "/v1/chat/completions", "2026-09-14", ("a", "b"))["id"] in {"a", "b"}
+    assert choose(catalogue, "/v1/responses", "2026-09-14", ("a",)) is None
     assert payload("/v1/responses", "model")["input"] == "OK"
 
 
