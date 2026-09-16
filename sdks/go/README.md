@@ -137,7 +137,7 @@ after the HTTP status has already been sent:
 
 ```go
 stream, err := client.MessagesStream(ctx, map[string]any{
-	"model": "claude-sonnet-4-5",
+	"model": "claude-sonnet-4-5-20250929",
 	"max_tokens": 256,
 	"messages": []any{
 		map[string]any{"role": "user", "content": "Hello!"},
@@ -169,7 +169,7 @@ for a request you were billed for. Use `Bytes` for `/audio/speech` and
 
 ```go
 audio, err := client.AudioSpeech(ctx, map[string]any{
-	"model": "gpt-4o-mini-tts", "voice": "alloy", "input": "Hello",
+	"model": "tts-1", "voice": "alloy", "input": "Hello",
 })
 ```
 

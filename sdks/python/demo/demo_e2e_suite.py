@@ -66,7 +66,7 @@ class MockGatewayHandler(BaseHTTPRequestHandler):
             # This mock certifies one fixed model. Never reflect request data
             # into a header: CR/LF there would create a response-splitting
             # primitive in what is meant to be a safe copyable example.
-            self.send_header("x-nr-model", "openai/gpt-5")
+            self.send_header("x-nr-model", "gpt-5")
             self.send_header("x-nr-input-tokens", "42")
             self.send_header("x-nr-output-tokens", "18")
             self.send_header("x-nr-total-tokens", "60")
@@ -76,7 +76,7 @@ class MockGatewayHandler(BaseHTTPRequestHandler):
                 "id": "chatcmpl-demo-001",
                 "object": "chat.completion",
                 "created": int(time.time()),
-                "model": payload.get("model", "openai/gpt-5"),
+                "model": payload.get("model", "gpt-5"),
                 "choices": [
                     {
                         "index": 0,
@@ -118,10 +118,10 @@ def run_demo_e2e() -> int:
     # 2. Execute chat completion with prompt selection & sampling
     print(f"\n[2/4] Executing chat completion with prompt template and sampling...")
     prompt_sel = prompt_template("welcome-template", {"user_email": "demo@example.com"})
-    sampling = build_sampling_params(advanced=True, model="openai/gpt-5", temperature=0.7, top_p=0.9)
+    sampling = build_sampling_params(advanced=True, model="gpt-5", temperature=0.7, top_p=0.9)
 
     completion = client.chat.completions.create(
-        model="openai/gpt-5",
+        model="gpt-5",
         messages=[
             {"role": "system", "content": "You are nRouter Demo Assistant."},
             {"role": "user", "content": "Demonstrate routing and metadata capture."},

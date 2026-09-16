@@ -155,14 +155,14 @@ from nroutersdk import nRouter
 with nRouter() as client:
     # Pre-call token counting (Free route)
     count = client.messages.count_tokens(
-        model="anthropic/claude-sonnet-4-5-20250929",
+        model="claude-sonnet-4-5-20250929",
         messages=[{"role": "user", "content": "Hello!"}],
     )
     print(f"Token count: {count['input_tokens']}")
 
     # Create message
     message = client.messages.create(
-        model="anthropic/claude-sonnet-4-5-20250929",
+        model="claude-sonnet-4-5-20250929",
         messages=[{"role": "user", "content": "Hello via Anthropic Messages!"}],
         max_tokens=256,
     )

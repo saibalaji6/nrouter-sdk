@@ -96,17 +96,18 @@ failed.
 
 ## What the create costs, and what it refuses first
 
-The reservation is `max($3.00, $0.75 × seconds)`, so a sixty-second job holds $45
-before a frame exists. This is the most expensive single call the gateway serves.
+The gateway places a credit hold sized to the requested duration before calling
+the provider, so a long video job holds credits before a frame exists. If your
+available balance is below the hold amount, the gateway refuses with HTTP 402
+`insufficient_credits`. This is the most expensive single call the gateway serves.
 
 `validateVideoParams()` — exported, and run for you inside `video()` — refuses
 these **before the hold is taken**, so a bad argument costs nothing:
 
 - **`seconds`** must be a positive finite number or numeric string, at most
-  **1333**. That ceiling is a money bound, not a fast-fail: above it the
-  per-request hold saturates its own ceiling, so the pre-call insufficient-credit
-  refusal stops covering the whole request and the settle lands as an overage
-  against your balance.
+  **1333**. That ceiling ensures your request does not exceed the gateway's
+  maximum per-request hold ceiling, keeping credit preflight aligned with your
+  account balance.
 - **`size`** must be `WIDTHxHEIGHT` with both dimensions above zero. Size matters
   more here than on the images wire: a create **bills on acceptance**, so a
   malformed value the provider rejects downstream is a charge for nothing. On the

@@ -35,7 +35,7 @@ async function main() {
         'x-nr-request-id': 'req-demo-ts-001',
         'x-nr-request-cost': '0.003120',
         'x-nr-cost-status': 'exact',
-        'x-nr-model': 'anthropic/claude-sonnet-4-5',
+        'x-nr-model': 'claude-sonnet-4-5-20250929',
         'x-nr-input-tokens': '55',
         'x-nr-output-tokens': '25',
         'x-nr-total-tokens': '80',
@@ -73,14 +73,14 @@ async function main() {
   console.log('\n[2/3] Calling client.nr.chat() with prompt template and sampling...');
   const promptSel = promptTemplate('support-bot', { email: 'demo@example.com' });
   const sampling = buildSamplingParams({
-    model: 'anthropic/claude-sonnet-4-5',
+    model: 'claude-sonnet-4-5-20250929',
     temperature: 0.7,
     top_p: 0.8,
     advanced: true,
   });
 
   const response = await client.nr.chat({
-    model: 'anthropic/claude-sonnet-4-5',
+    model: 'claude-sonnet-4-5-20250929',
     messages: [{ role: 'user', content: 'Demo test query' }],
     promptTemplateId: promptSel.templateId,
     promptVariables: promptSel.variables,

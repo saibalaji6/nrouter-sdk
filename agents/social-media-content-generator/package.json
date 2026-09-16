@@ -1,0 +1,57 @@
+{
+  "name": "@nrouter_ai/social-media-content-generator",
+  "version": "0.1.0",
+  "description": "A viral social media content generator agent.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "README.md",
+    "LICENSE",
+    "skills"
+  ],
+  "scripts": {
+    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "e2e": "npm run build && playwright test"
+  },
+  "dependencies": {
+    "@nrouter_ai/sdk": "3.1.2"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1",
+    "@types/node": "22.18.0",
+    "typescript": "5.9.2",
+    "vitest": "3.2.4"
+  },
+  "keywords": [
+    "nrouter",
+    "social-media",
+    "content-generator",
+    "ai-agent"
+  ],
+  "author": "nRouter <hello@nrouter.ai>",
+  "homepage": "https://nrouter.ai",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nRouterGateway/nrouter-sdk.git",
+    "directory": "agents/social-media-content-generator"
+  },
+  "bugs": {
+    "url": "https://github.com/nRouterGateway/nrouter-sdk/issues"
+  }
+}

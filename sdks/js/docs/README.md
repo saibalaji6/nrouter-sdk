@@ -26,7 +26,7 @@ import { nRouter } from '@nrouter_ai/sdk';
 
 const client = new nRouter();                 // reads NROUTER_API_KEY
 const res = await client.nr.chat({
-  model: 'anthropic/claude-sonnet-4-5-20250929',
+  model: 'claude-sonnet-4-5-20250929',
   prompt: 'Hello!',
 });
 

@@ -342,11 +342,10 @@ export interface EmbeddingsParams {
 // `image()` and `video()` are the endpoints where a bad argument is expensive.
 // Everything below refuses BEFORE `this.send`, so the caller pays no round
 // trip, consumes no rate-limit slot, and — for `video()` — takes no credit
-// hold. Every bound is the gateway's own, cited at the constant that carries
-// it, because an SDK that is STRICTER than the gateway is a false gate: it
-// refuses a request the gateway accepts and bills. The gateway makes that
-// argument against itself in `src/http/images.rs`, where rejecting the
-// documented `size: "auto"` made the gateway "the only refusal in the path".
+// hold. Every bound reflects gateway wire validation, because an SDK that is
+// STRICTER than the gateway is a false gate: it refuses a request the gateway
+// would accept and bill. For instance, admitting documented values like
+// `size: "auto"` avoids becoming the only refusal in the path.
 //
 // The escape hatch is `extra`, exactly as it is for the headerless `pcm`
 // speech format above: `jsonBody` spreads `extra` FIRST and `defined()` drops
@@ -354,13 +353,12 @@ export interface EmbeddingsParams {
 // wire untouched and the gateway and the provider decide. Use it deliberately.
 
 /**
- * The inclusive ceiling on `n`, and the gateway's own.
+ * The inclusive ceiling on `n`: up to 10 images per request.
  *
- * `src/http/images.rs`: `const MAX_IMAGES: u64 = 10;`, enforced by
- * `image_count()` on the caller's request before preflight or provider egress.
- * Each image is a separate charge — `ReservationClass::Image` holds
- * `max($0.35, $0.35 x n)` — so `n` is the multiplier on the bill, not a
- * formatting preference.
+ * The gateway refuses requests with n > 10 with HTTP 400 before provider
+ * egress. Each image is a separate charge — the gateway places a credit hold
+ * sized to the request before calling the provider — so `n` is the multiplier
+ * on the bill, not a formatting preference.
  */
 export const MAX_IMAGE_COUNT = 10;
 
@@ -369,14 +367,12 @@ export const MAX_IMAGE_COUNT = 10;
  *
  * `256x256`/`512x512`/`1024x1024` are dall-e-2, `1024x1792`/`1792x1024` are
  * dall-e-3, `1024x1536`/`1536x1024`/`auto` are the gpt-image family. `auto` is
- * a documented value the gateway admits explicitly (`src/http/images.rs`,
- * `checked_image_shape`) and prices at the same default shape an omitted
- * `size` gets (`src/http/multimodal.rs`, `image_shape` -> `(1024, 1024)`).
+ * a documented value the gateway admits explicitly and prices at the same
+ * default shape (1024x1024) that an omitted `size` receives.
  *
- * Size is two thirds of the image price key, so a shape nobody prices is a
- * request the gateway refuses pre-egress rather than one it bills. A model
- * outside that family may take a size not listed here — pass it through
- * `extra`.
+ * Size determines image pricing, so an unrecognized shape is refused
+ * pre-egress rather than billed. A model outside that family may take a size
+ * not listed here — pass it through `extra`.
  */
 export const VALID_IMAGE_SIZES = [
   'auto',
@@ -394,12 +390,10 @@ export type ImageSize = (typeof VALID_IMAGE_SIZES)[number];
  * The quality tokens the gateway prices.
  *
  * `standard`/`hd` are dall-e-3, `low`/`medium`/`high`/`auto` are the
- * gpt-image family. The gateway lowercases this value and makes it the first
- * component of the price key (`src/http/multimodal.rs`, `image_shape`), and
- * the ordering comment there records a real 2x difference in dollars between
- * `hd` and the bare key. `auto` means "unspecified" and resolves to the
- * model's default. Anything else, if a provider ever takes one, goes through
- * `extra`.
+ * gpt-image family. The gateway lowercases this value when evaluating the price,
+ * where `hd` incurs a higher cost than standard. `auto` means "unspecified"
+ * and resolves to the model's default. Anything else, if a provider ever takes
+ * one, goes through `extra`.
  */
 export const VALID_IMAGE_QUALITIES = [
   'auto',
@@ -416,31 +410,25 @@ export const VALID_IMAGE_RESPONSE_FORMATS = ['url', 'b64_json'] as const;
 export type ImageResponseFormat = (typeof VALID_IMAGE_RESPONSE_FORMATS)[number];
 
 /**
- * The largest `seconds` a video request may ask for, and the ONE bound here
- * that is a money bound rather than a fast-fail.
+ * The largest `seconds` a video request may ask for: 1333 seconds.
  *
- * Derived, not chosen: the gateway holds `$0.75` per requested second
- * (`ReservationClass::Video::per_unit_usd`) against a per-request ceiling of
- * `MAX_RESERVATION_USD = $1_000.0`, both in `src/proxy/credits.rs`. Above
- * `1000 / 0.75 = 1333.33` seconds `reservation_envelope` CLAMPS rather than
- * refusing, and says so in its own log line: "the hold is capped, so the
- * pre-call 402 cannot fire for the uncovered remainder and the settle may
- * overage." A request past this point is therefore under-held on purpose —
- * the balance check that protects the customer stops covering the part of the
- * request that exceeds the cap. Floored to a whole second.
+ * The gateway places a credit hold sized to the requested duration before
+ * calling the provider. Above 1333 seconds, the credit hold reaches the
+ * maximum per-request hold ceiling, so the balance check before the call
+ * stops covering the remainder and any excess settles as an overage against
+ * your balance. The client enforces this ceiling to ensure every requested
+ * second is pre-validated against your available balance.
  */
 export const MAX_VIDEO_SECONDS = 1333;
 
 /**
  * The floor on `waitForVideo`'s poll interval.
  *
- * Polling is FREE — `get_video` deliberately bypasses `multimodal::serve`, so
- * a poll takes no reservation (`src/http/videos.rs`, "Collection is not a
- * billable call"). It is not free of a rate-limit slot: every poll is a
- * metered request against the key's RPM, and the gateway documents the steady
- * state of this route as "a client polling every couple of seconds". 250 ms is
- * eight times faster than that and still leaves the limiter room; a 1 ms loop
- * spends the customer's own RPM budget and 429s their real traffic.
+ * Polling is free of credit charges: retrieving status and downloading content
+ * takes no reservation and is not billed. However, polling is not free of rate limits:
+ * every poll is a metered request against the key's RPM. 250 ms leaves the rate
+ * limiter headroom; a tighter loop risks exhausting your RPM budget and receiving
+ * HTTP 429 on subsequent requests.
  */
 export const MIN_VIDEO_POLL_INTERVAL_MS = 250;
 
@@ -499,12 +487,10 @@ function coerceSeconds(value: number | string): number {
 /**
  * Render `seconds` the way the video WIRE requires it: as a string.
  *
- * The gateway is the permissive half — `src/http/videos.rs` reads `seconds`
- * through `as_seconds`, which admits a number or a numeric string — and it
- * then relays the request body to the provider VERBATIM. OpenAI's video wire
- * types the field as a string and answers 400 for a JSON number, so the shape
- * this SDK serialises is the shape the provider refuses or accepts. Measured
- * against the live route: `4` was refused twice, `"4"` rendered.
+ * The gateway admits `seconds` as either a number or a numeric string, and then
+ * relays the request body to the provider verbatim. Upstream video wires type
+ * the field as a string and return 400 for a raw JSON number, so serializing as
+ * a string ensures provider acceptance while letting callers pass numbers.
  *
  * A caller who writes the natural `seconds: 4` must therefore not be handed a
  * provider 400, and a caller who already wrote a string must get their exact
@@ -743,9 +729,9 @@ export class Multimodal {
    * POST /v1/videos — start a generation job.
    *
    * THIS is the billed call. Polling with `videoStatus` and downloading with
-   * `videoContent` are free (gateway `src/http/videos.rs`: "Create bills;
-   * collection is free"), so a retry loop around *this* method spends real
-   * credits per attempt while a poll loop does not.
+   * `videoContent` are free (job creation bills; status and collection are free),
+   * so a retry loop around *this* method spends real credits per attempt while
+   * a poll loop does not.
    */
   async video(params: VideoParams, options?: CallOptions): Promise<NRouterResponse<JsonObject>> {
     validateVideoParams(params);
@@ -869,13 +855,10 @@ export class Multimodal {
     // MULTIPART IS NOT JSON, and "last one wins" does not hold here.
     //
     // In a JSON body a later key overwrites an earlier one, so emitting
-    // `extra` first genuinely lets the named field win. The gateway settles a
-    // multipart target from the FIRST part carrying that name
-    // (nrouter-rust-gateway src/http/audio.rs), so the identical ordering
-    // does the OPPOSITE: `extra.model` would be the one preflight authorizes
-    // and prices, while `params.model` — the value the caller passed and the
-    // one this SDK validated — is ignored. A caller could route and bill
-    // against a model they never named.
+    // `extra` first genuinely lets the named field win. In multipart requests,
+    // the gateway resolves parameters from the first part carrying that name,
+    // so emitting `extra` first would cause `extra.model` to override
+    // `params.model` (the validated parameter passed by the caller).
     //
     // So a reserved name is DROPPED from `extra` rather than emitted ahead of
     // its named parameter, and the named parameter is written first.

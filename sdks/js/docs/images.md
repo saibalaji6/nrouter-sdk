@@ -93,12 +93,11 @@ is present, so record them separately rather than folding one into the other.
 
 ## The hold is per image, and it is taken before the provider is called
 
-The gateway reserves `max($0.35, $0.35 × n)` **before** the provider call and
-settles down to the real price afterwards. Two consequences before you raise `n`:
+The gateway places a credit hold sized to the request **before** calling the provider
+and settles down to the real price afterwards. Two consequences before you raise `n`:
 
-- a ten-image call needs $3.50 of available credit even if the settled price is a
-  fraction of that, and insufficient credit is a **402 before the provider call**
-  — never a partial delivery;
+- if your available balance is below the hold amount, you receive HTTP 402
+  `insufficient_credits` before the provider call — never a partial delivery;
 - every retry is a fresh reservation and a fresh bill. There is no retry loop
   worth adding above this call that does not double the charge.
 

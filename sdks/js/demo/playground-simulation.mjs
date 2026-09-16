@@ -5,10 +5,10 @@
  * Demonstrates 1-to-1 parity between the dashboard Playground UI and @nrouter_ai/sdk.
  * Exercises every Playground parameter and scenario end-to-end:
  *   - Example 1: Standard Chat with Prompt Template & Advanced Sampling (gpt-4o)
- *   - Example 2: Claude Sonnet Turn with XOR Mutual Exclusion & Wire Translation (claude-3-5-sonnet)
+ *   - Example 2: Claude Sonnet Turn with XOR Mutual Exclusion & Wire Translation (claude-sonnet-4-5-20250929)
  *   - Example 3: Claude Deprecated Sampling Turn (claude-opus-5)
  *   - Example 4: Real-time SSE Streaming with Typewriter Output & TTFT (claude-haiku)
- *   - Example 5: Playground Compare Mode — Side-by-Side Dual Model Run (gpt-4o vs claude-3-5-sonnet)
+ *   - Example 5: Playground Compare Mode — Side-by-Side Dual Model Run (gpt-4o vs claude-sonnet-4-5-20250929)
  *   - Example 6: Dynamic Model & Provider Discovery (client.nr.models.list & client.nr.providers)
  *
  * RUN:
@@ -60,7 +60,7 @@ function createSimulationFetch() {
         object: 'list',
         data: [
           { id: 'gpt-4o', owned_by: 'openai' },
-          { id: 'claude-3-5-sonnet', owned_by: 'anthropic' },
+          { id: 'claude-sonnet-4-5-20250929', owned_by: 'anthropic' },
           { id: 'claude-haiku-4-5-20251001', owned_by: 'anthropic' },
           { id: 'claude-opus-5', owned_by: 'anthropic' },
           { id: 'gemini-2.5-pro', owned_by: 'google' },
@@ -289,7 +289,7 @@ console.log(`- Cache Status : ${ex1Res.meta.responseCache}`);
 // -----------------------------------------------------------------------------
 console.log('\n--- Example 2: Claude Sonnet Turn (Automatic XOR Safety & /v1/messages Wire) ---');
 const ex2Options = {
-  model: 'claude-3-5-sonnet',
+  model: 'claude-sonnet-4-5-20250929',
   systemPrompt: 'You are an expert distributed systems engineer.',
   prompt: 'Summarize Raft consensus in one sentence.',
   advancedSampling: true,
@@ -368,14 +368,14 @@ console.log(`- Tokens                     : ${streamResult.meta.totalTokens} (Pr
 // -----------------------------------------------------------------------------
 // EXAMPLE 5: Playground Compare Mode (Side-by-Side Dual Model Run)
 // -----------------------------------------------------------------------------
-console.log('\n--- Example 5: Playground Compare Mode (gpt-4o vs claude-3-5-sonnet) ---');
+console.log('\n--- Example 5: Playground Compare Mode (gpt-4o vs claude-sonnet-4-5-20250929) ---');
 const compareResults = await client.nr.compare(
   {
     prompt: 'Define latency vs throughput in 10 words or less.',
     advancedSampling: true,
     temperature: 0.6,
   },
-  ['gpt-4o', 'claude-3-5-sonnet']
+  ['gpt-4o', 'claude-sonnet-4-5-20250929']
 );
 
 console.log('Side-by-Side Comparison:');

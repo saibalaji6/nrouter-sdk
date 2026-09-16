@@ -5,7 +5,7 @@ routing option in this SDK, and adding one would not help: the decision is made
 from your organization's configuration, keyed on the model name in the request.
 
 ```ts
-await client.nr.chat({ model: 'anthropic/claude-sonnet-4-5-20250929', prompt });  // concrete
+await client.nr.chat({ model: 'claude-sonnet-4-5-20250929', prompt });  // concrete
 await client.nr.chat({ model: 'summariser', prompt });                            // an alias you configured
 ```
 
